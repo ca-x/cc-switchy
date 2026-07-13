@@ -45,6 +45,19 @@ fn documented_commands_match_the_cli_contract() {
     ));
     assert!(Cli::try_parse_from(["cc-switchy", "--lang", "zh"]).is_ok());
     assert!(Cli::try_parse_from(["cc-switchy", "--lang", "en"]).is_ok());
+
+    for key_contract in [
+        "Tab/Shift+Tab",
+        "`q` 在非表单界面退出",
+        "`Ctrl+C` 可从任意向导界面退出",
+        "`q` exits outside forms",
+        "`Ctrl+C` exits from every Wizard screen",
+    ] {
+        assert!(
+            readme.contains(key_contract),
+            "README is missing {key_contract}"
+        );
+    }
 }
 
 #[test]

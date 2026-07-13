@@ -68,10 +68,12 @@ cc-switchy --lang en
 ### 向导按键
 
 - `a` 新增 WebDAV 或 S3 来源
+- 表单内直接输入文字，`Tab/Shift+Tab` 切换字段
 - `Enter` 查看详情、进入下一字段或保存
 - `e` 编辑，`x` 删除，`t` 测试连接，`m` 设置默认源
 - `L` 切换语言
-- `Esc` 放弃当前表单，`q` 退出
+- `Esc` 放弃当前表单或返回上一层
+- `q` 在非表单界面退出，`Ctrl+C` 可从任意向导界面退出
 
 首次新增的来源自动成为默认源。删除默认源时，如果仍有其他来源，必须先
 选择替代默认源。密码和 Secret Access Key 完全遮挡，Access Key ID 只显示
@@ -176,7 +178,7 @@ ZIP 路径和 SQL，再创建本地备份并替换数据库与 Skills。
 - `config.toml` 与 `state.json` 在 Unix 上使用 `0600`；凭据仍以兼容所需的明文保存。
 - 下载大小、ZIP 展开路径/数量/总量、SQL 导入和 SHA-256 均在修改本地状态前校验。
 - Reqwest 使用 Rustls 与 webpki roots。依赖仅由私有 CA 签发的 WebDAV/S3 端点
-  默认不会被信任；v0.1.0 不提供自定义 CA 导入参数。
+  默认不会被信任；v0.1.1 不提供自定义 CA 导入参数。
 - 日志和 TUI 会遮挡密码、Authorization、S3 签名和 URL 查询值，但操作系统、
   终端录制和备份权限仍需由使用者保护。
 
@@ -213,9 +215,11 @@ comparison, merge, upload, remote delete, or conflict resolution.
 
 ### Wizard and TUI
 
-Wizard keys: `a` add, `Enter` inspect/advance/save, `e` edit, `x` delete, `t`
-test, `m` make default, `L` language, `Esc` discard the current form, and `q`
-exit.
+Wizard keys: printable characters enter text inside forms, `Tab/Shift+Tab`
+changes fields, `Enter` inspects/advances/saves, `a` adds, `e` edits, `x`
+deletes, `t` tests, `m` makes the selected source default, and `L` changes
+language. `Esc` discards a form or goes back, `q` exits outside forms, and
+`Ctrl+C` exits from every Wizard screen.
 
 Main TUI keys: `1` Providers, `2` Skills, `3` Activity, `4` Sources,
 `j/k` or arrows to move, `Tab` to change focus, `[`/`]` to browse Agents,
