@@ -114,6 +114,11 @@ pub enum AppError {
     Restore(String),
     #[error("restore failed and rollback was incomplete: {0}")]
     Rollback(String),
+    #[error("{feature} is unsupported for Agent {agent} on this platform")]
+    UnsupportedAgentFeature {
+        agent: String,
+        feature: &'static str,
+    },
 }
 
 impl AppError {
