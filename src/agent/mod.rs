@@ -1,5 +1,6 @@
 mod model;
 mod paths;
+mod provider;
 mod repository;
 mod settings;
 
@@ -8,5 +9,6 @@ pub use model::{
     ProjectionWarning, Provider, ProviderMeta, SkillSyncMethod,
 };
 pub use paths::AgentPaths;
+pub use provider::ProviderProjector;
 pub use repository::AgentRepository;
 pub use settings::{effective_current_provider, DeviceSettings};

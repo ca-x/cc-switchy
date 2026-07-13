@@ -1,10 +1,13 @@
 use std::fs;
 
 use cc_switchy::agent::{
-    effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings, SkillSyncMethod,
+    effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings,
+    ProviderProjector, SkillSyncMethod,
 };
+use cc_switchy::progress::NoopProgress;
 use cc_switchy::AppError;
 use rusqlite::Connection;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 fn seeded_database(home: &TempDir) -> std::path::PathBuf {
@@ -26,6 +29,33 @@ fn seeded_database(home: &TempDir) -> std::path::PathBuf {
              INSERT OR REPLACE INTO settings (key, value) VALUES ('fixtureSetting', 'fixture-value');",
         )
         .expect("seed rows");
+    path
+}
+
+fn provider_database(home: &TempDir) -> std::path::PathBuf {
+    let path = home.path().join("providers.db");
+    let connection = Connection::open(&path).expect("database");
+    connection
+        .execute_batch(include_str!("fixtures/cc-switch-v2/db.sql"))
+        .expect("fixture schema");
+    connection
+        .execute_batch(
+            r#"DELETE FROM providers;
+               INSERT INTO providers (id, app_type, name, settings_config, created_at, sort_index, meta, is_current)
+               VALUES
+                 ('claude-a', 'claude', 'Claude A', '{"env":{"ANTHROPIC_AUTH_TOKEN":"claude-a"}}', 1, 1, '{"commonConfigEnabled":true}', 1),
+                 ('claude-b', 'claude', 'Claude B', '{"env":{"ANTHROPIC_AUTH_TOKEN":"claude-b"}}', 2, 2, '{}', 0),
+                 ('codex-a', 'codex', 'Codex A', '{"auth":{"OPENAI_API_KEY":"codex-a"},"config":"model_provider = \"a\"\n[model_providers.a]\nbase_url = \"https://a.example/v1\"\n"}', 1, 1, '{}', 1),
+                 ('gemini-a', 'gemini', 'Gemini A', '{"env":{"GEMINI_API_KEY":"gemini-a"},"config":{"theme":"system"}}', 1, 1, '{}', 1),
+                 ('opencode-managed', 'opencode', 'OpenCode Managed', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://managed.example/v1"}}', 1, 1, '{}', 0),
+                 ('opencode-db-only', 'opencode', 'OpenCode DB Only', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://skip.example/v1"}}', 2, 2, '{"liveConfigManaged":false}', 0),
+                 ('openclaw-managed', 'openclaw', 'OpenClaw Managed', '{"baseUrl":"https://claw.example/v1","api":"openai-responses","models":[]}', 1, 1, '{}', 0),
+                 ('hermes-managed', 'hermes', 'Hermes Managed', '{"base_url":"https://hermes.example/v1","api_key":"hermes-key","model":"gpt"}', 1, 1, '{}', 0),
+                 ('desktop-proxy', 'claude-desktop', 'Desktop Proxy', '{"env":{"ANTHROPIC_AUTH_TOKEN":"desktop"}}', 1, 1, '{"claudeDesktopMode":"proxy"}', 1);
+               INSERT OR REPLACE INTO settings (key, value)
+               VALUES ('common_config_claude', '{"includeCoAuthoredBy":false}');"#,
+        )
+        .expect("provider rows");
     path
 }
 
@@ -177,4 +207,284 @@ fn repository_can_update_database_current_provider_transactionally() {
     assert!(repo
         .set_database_current_provider(Agent::Codex, "missing")
         .is_err());
+}
+
+#[test]
+fn provider_projection_writes_exclusive_agents_and_merges_additive_agents() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let settings_path = home.path().join(".cc-switch/settings.json");
+    fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
+    fs::write(
+        &settings_path,
+        r#"{"currentProviderClaude":"claude-a","currentProviderCodex":"codex-a","currentProviderGemini":"gemini-a"}"#,
+    )
+    .expect("settings");
+    let opencode_path = home.path().join(".config/opencode/opencode.json");
+    fs::create_dir_all(opencode_path.parent().expect("OpenCode parent")).expect("OpenCode dir");
+    fs::write(
+        &opencode_path,
+        r#"{"$schema":"https://opencode.ai/config.json","provider":{"user-owned":{"npm":"custom"}},"unknownRoot":true}"#,
+    )
+    .expect("OpenCode live config");
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+    let mut projector =
+        ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress));
+
+    let report = projector.project_all();
+
+    let claude: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(".claude/settings.json")).expect("Claude settings"),
+    )
+    .expect("Claude JSON");
+    assert_eq!(
+        claude
+            .pointer("/env/ANTHROPIC_AUTH_TOKEN")
+            .and_then(|v| v.as_str()),
+        Some("claude-a")
+    );
+    assert_eq!(
+        claude.get("includeCoAuthoredBy").and_then(|v| v.as_bool()),
+        Some(false)
+    );
+    assert!(home.path().join(".codex/auth.json").exists());
+    assert!(fs::read_to_string(home.path().join(".codex/config.toml"))
+        .expect("Codex config")
+        .contains("https://a.example/v1"));
+    assert!(fs::read_to_string(home.path().join(".gemini/.env"))
+        .expect("Gemini env")
+        .contains("GEMINI_API_KEY=gemini-a"));
+    let opencode: serde_json::Value =
+        serde_json::from_slice(&fs::read(&opencode_path).expect("OpenCode output"))
+            .expect("OpenCode JSON");
+    assert!(opencode.pointer("/provider/user-owned").is_some());
+    assert!(opencode.pointer("/provider/opencode-managed").is_some());
+    assert!(opencode.pointer("/provider/opencode-db-only").is_none());
+    assert_eq!(
+        opencode.get("unknownRoot").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert!(home.path().join(".openclaw/openclaw.json").exists());
+    assert!(home.path().join(".hermes/config.yaml").exists());
+    assert!(report
+        .warnings
+        .iter()
+        .any(|warning| warning.agent == Some(Agent::ClaudeDesktop)));
+}
+
+#[test]
+fn restore_projection_never_backfills_live_drift_into_the_database() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let settings_path = home.path().join("settings.json");
+    fs::write(&settings_path, r#"{"currentProviderClaude":"claude-a"}"#).expect("settings");
+    let live_path = home.path().join(".claude/settings.json");
+    fs::create_dir_all(live_path.parent().expect("live parent")).expect("live dir");
+    fs::write(
+        &live_path,
+        r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"local-drift"}}"#,
+    )
+    .expect("live drift");
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+        .project_agent(Agent::Claude)
+        .expect("project Claude");
+
+    let stored = repo
+        .provider(Agent::Claude, "claude-a")
+        .expect("provider")
+        .expect("Claude A");
+    assert_eq!(
+        stored
+            .settings_config
+            .pointer("/env/ANTHROPIC_AUTH_TOKEN")
+            .and_then(serde_json::Value::as_str),
+        Some("claude-a")
+    );
+}
+
+#[test]
+fn invalid_codex_config_leaves_all_codex_files_unchanged() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "UPDATE providers SET settings_config=?1 WHERE id='codex-a' AND app_type='codex'",
+            [r#"{"auth":{"OPENAI_API_KEY":"new"},"config":"[broken"}"#],
+        )
+        .expect("break Codex config");
+    drop(connection);
+    let codex_dir = home.path().join(".codex");
+    fs::create_dir_all(&codex_dir).expect("Codex dir");
+    fs::write(codex_dir.join("auth.json"), b"{\"old\":true}").expect("old auth");
+    fs::write(codex_dir.join("config.toml"), b"model = \"old\"\n").expect("old config");
+    let mut settings = DeviceSettings::default();
+    settings.set_current_provider(Agent::Codex, Some("codex-a"));
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    assert!(
+        ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress),)
+            .project_agent(Agent::Codex)
+            .is_err()
+    );
+    assert_eq!(
+        fs::read(codex_dir.join("auth.json")).expect("auth"),
+        b"{\"old\":true}"
+    );
+    assert_eq!(
+        fs::read(codex_dir.join("config.toml")).expect("config"),
+        b"model = \"old\"\n"
+    );
+}
+
+#[test]
+fn codex_model_catalog_is_generated_and_referenced_atomically() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "UPDATE providers SET settings_config=?1 WHERE id='codex-a' AND app_type='codex'",
+            [r#"{
+              "auth":{"OPENAI_API_KEY":"codex-a"},
+              "config":"model_provider = \"a\"\nmodel_context_window = 200000\n[model_providers.a]\nbase_url = \"https://a.example/v1\"\n",
+              "modelCatalog":{"models":[
+                {"model":"vendor/coder","displayName":"Vendor Coder","contextWindow":180000},
+                {"model":"vendor/coder"},
+                {"model":"vendor/vision","inputModalities":["text","image"]}
+              ]}
+            }"#],
+        )
+        .expect("add model catalog");
+    drop(connection);
+    let mut settings = DeviceSettings::default();
+    settings.set_current_provider(Agent::Codex, Some("codex-a"));
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+        .project_agent(Agent::Codex)
+        .expect("project Codex catalog");
+
+    let config =
+        fs::read_to_string(home.path().join(".codex/config.toml")).expect("Codex config.toml");
+    assert!(config.contains("model_catalog_json = \"cc-switch-model-catalog.json\""));
+    let catalog: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(".codex/cc-switch-model-catalog.json")).expect("Codex catalog"),
+    )
+    .expect("catalog JSON");
+    let models = catalog["models"].as_array().expect("catalog models");
+    assert_eq!(models.len(), 2);
+    assert_eq!(models[0]["slug"], "vendor/coder");
+    assert_eq!(models[0]["display_name"], "Vendor Coder");
+    assert_eq!(models[0]["context_window"], 180000);
+    assert_eq!(models[1]["context_window"], 200000);
+    assert_eq!(
+        models[1]["input_modalities"],
+        serde_json::json!(["text", "image"])
+    );
+    assert!(models[0].get("apply_patch_tool_type").is_none());
+}
+
+#[test]
+fn manual_exclusive_switch_updates_device_database_and_live_config() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let settings_path = home.path().join(".cc-switch/settings.json");
+    fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
+    fs::write(&settings_path, r#"{"currentProviderClaude":"claude-a"}"#).expect("settings");
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    fs::create_dir_all(home.path().join(".claude")).expect("Claude dir");
+    fs::write(
+        home.path().join(".claude/settings.json"),
+        r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"claude-a"}}"#,
+    )
+    .expect("current live");
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+        .switch_exclusive(Agent::Claude, "claude-b")
+        .expect("switch Claude");
+
+    assert_eq!(settings.current_provider(Agent::Claude), Some("claude-b"));
+    assert_eq!(
+        repo.database_current_provider(Agent::Claude)
+            .expect("database current")
+            .as_deref(),
+        Some("claude-b")
+    );
+    let live: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(".claude/settings.json")).expect("live settings"),
+    )
+    .expect("live JSON");
+    assert_eq!(
+        live.pointer("/env/ANTHROPIC_AUTH_TOKEN")
+            .and_then(serde_json::Value::as_str),
+        Some("claude-b")
+    );
+}
+
+#[test]
+fn failed_manual_switch_restores_files_device_database_and_backfilled_provider() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "UPDATE providers SET settings_config='[]' WHERE id='claude-b' AND app_type='claude'",
+            [],
+        )
+        .expect("make target invalid");
+    drop(connection);
+
+    let settings_path = home.path().join(".cc-switch/settings.json");
+    fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
+    let original_settings = br#"{"currentProviderClaude":"claude-a","localOnly":true}"#;
+    fs::write(&settings_path, original_settings).expect("settings");
+    let live_path = home.path().join(".claude/settings.json");
+    fs::create_dir_all(live_path.parent().expect("Claude parent")).expect("Claude dir");
+    let original_live = br#"{"env":{"ANTHROPIC_AUTH_TOKEN":"local-drift"},"keep":true}"#;
+    fs::write(&live_path, original_live).expect("live config");
+
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    assert!(
+        ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress),)
+            .switch_exclusive(Agent::Claude, "claude-b")
+            .is_err()
+    );
+
+    assert_eq!(settings.current_provider(Agent::Claude), Some("claude-a"));
+    assert_eq!(
+        fs::read(&settings_path).expect("settings rollback"),
+        original_settings
+    );
+    assert_eq!(fs::read(&live_path).expect("live rollback"), original_live);
+    assert_eq!(
+        repo.database_current_provider(Agent::Claude)
+            .expect("database current")
+            .as_deref(),
+        Some("claude-a")
+    );
+    let restored = repo
+        .provider(Agent::Claude, "claude-a")
+        .expect("provider query")
+        .expect("Claude A");
+    assert_eq!(
+        restored
+            .settings_config
+            .pointer("/env/ANTHROPIC_AUTH_TOKEN")
+            .and_then(serde_json::Value::as_str),
+        Some("claude-a")
+    );
 }

@@ -20,16 +20,19 @@ futures-util = "0.3"
 fs2 = "0.4"
 hex = "0.4"
 hmac = "0.12"
+indexmap = { version = "2", features = ["serde"] }
 ratatui = "0.30"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "json", "stream"] }
 rusqlite = { version = "0.40", default-features = false, features = ["backup", "bundled", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync", "time"] }
 toml = "0.9"
+toml_edit = "0.23"
 url = "2.5"
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 

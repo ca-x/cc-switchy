@@ -115,6 +115,10 @@ impl DeviceSettings {
     pub fn values(&self) -> &Map<String, Value> {
         &self.values
     }
+
+    pub fn loaded_from(&self) -> Option<&Path> {
+        self.loaded_from.as_deref()
+    }
 }
 
 pub fn effective_current_provider(

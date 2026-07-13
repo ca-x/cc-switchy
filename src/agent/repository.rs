@@ -100,6 +100,47 @@ impl AgentRepository {
         transaction.commit().map_err(database_error)
     }
 
+    pub fn restore_database_current_provider(
+        &mut self,
+        agent: Agent,
+        id: Option<&str>,
+    ) -> Result<(), AppError> {
+        if let Some(id) = id {
+            return self.set_database_current_provider(agent, id);
+        }
+
+        self.connection
+            .execute(
+                "UPDATE providers SET is_current=0 WHERE app_type=?1",
+                [agent.db_key()],
+            )
+            .map(|_| ())
+            .map_err(database_error)
+    }
+
+    pub fn update_provider_settings(
+        &mut self,
+        agent: Agent,
+        id: &str,
+        settings: &serde_json::Value,
+    ) -> Result<(), AppError> {
+        let serialized = serde_json::to_string(settings)
+            .map_err(|error| AppError::DatabaseValidation(error.to_string()))?;
+        let affected = self
+            .connection
+            .execute(
+                "UPDATE providers SET settings_config=?1 WHERE app_type=?2 AND id=?3",
+                params![serialized, agent.db_key(), id],
+            )
+            .map_err(database_error)?;
+        if affected != 1 {
+            return Err(AppError::DatabaseValidation(format!(
+                "provider {id} does not exist for {agent}"
+            )));
+        }
+        Ok(())
+    }
+
     pub fn mcp_servers(&self) -> Result<Vec<McpServer>, AppError> {
         let mut statement = self
             .connection
