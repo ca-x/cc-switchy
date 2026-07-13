@@ -92,6 +92,28 @@ pub enum AppError {
     RemoteArtifactMissing { artifact: String },
     #[error("response for {target} exceeds the {max} byte limit: {size} bytes")]
     ResponseTooLarge { target: String, size: u64, max: u64 },
+    #[error("another sync or restore operation is already running")]
+    SyncLocked,
+    #[error("skills archive contains an unsafe path: {path}")]
+    ArchiveUnsafePath { path: String },
+    #[error("skills archive contains {count} entries, exceeding the limit of {max}")]
+    ArchiveTooManyEntries { count: usize, max: usize },
+    #[error("skills archive expands to {size} bytes, exceeding the limit of {max}")]
+    ArchiveExtractedTooLarge { size: u64, max: u64 },
+    #[error("skills archive uses unsupported compression for {path}")]
+    UnsupportedArchiveCompression { path: String },
+    #[error("failed to read skills archive: {0}")]
+    Archive(String),
+    #[error("the database input is not a CC Switch SQL export")]
+    InvalidSqlExport,
+    #[error("database operation failed: {0}")]
+    Database(String),
+    #[error("database validation failed: {0}")]
+    DatabaseValidation(String),
+    #[error("restore failed: {0}")]
+    Restore(String),
+    #[error("restore failed and rollback was incomplete: {0}")]
+    Rollback(String),
 }
 
 impl AppError {

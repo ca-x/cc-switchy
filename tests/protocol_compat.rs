@@ -23,9 +23,30 @@ fn current_manifest_parses_and_validates() {
         .expect("valid current manifest");
 
     assert_eq!(validated.db_compat_version(), DB_COMPAT_VERSION);
-    assert_eq!(validated.artifact(REMOTE_DB_SQL).unwrap().size, 123);
-    assert_eq!(validated.artifact(REMOTE_SKILLS_ZIP).unwrap().size, 456);
+    assert_eq!(validated.artifact(REMOTE_DB_SQL).unwrap().size, 2626);
+    assert_eq!(validated.artifact(REMOTE_SKILLS_ZIP).unwrap().size, 280);
     assert_eq!(validated.layout(), RemoteLayout::Current);
+}
+
+#[test]
+fn committed_fixture_artifacts_match_the_manifest() {
+    let validated = manifest()
+        .validate(RemoteLayout::Current)
+        .expect("valid current manifest");
+    verify_artifact(
+        include_bytes!("fixtures/cc-switch-v2/db.sql"),
+        REMOTE_DB_SQL,
+        validated.artifact(REMOTE_DB_SQL).expect("db metadata"),
+    )
+    .expect("db fixture integrity");
+    verify_artifact(
+        include_bytes!("fixtures/cc-switch-v2/skills.zip"),
+        REMOTE_SKILLS_ZIP,
+        validated
+            .artifact(REMOTE_SKILLS_ZIP)
+            .expect("skills metadata"),
+    )
+    .expect("skills fixture integrity");
 }
 
 #[test]
