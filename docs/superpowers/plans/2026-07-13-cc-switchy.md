@@ -38,7 +38,7 @@
     src/progress.rs
     src/config/{mod.rs,model.rs,store.rs,catalog.rs}
     src/remote/{mod.rs,protocol.rs,webdav.rs,s3.rs}
-    src/restore/{mod.rs,archive.rs,backup.rs,database.rs,service.rs}
+    src/restore/{mod.rs,archive.rs,backup.rs,database.rs,schema.rs,service.rs}
     src/agent/{mod.rs,model.rs,paths.rs,settings.rs,repository.rs,mcp.rs,skills.rs}
     src/agent/provider/{mod.rs,claude.rs,codex.rs,gemini.rs,additive.rs,claude_desktop.rs,hermes.rs}
     src/commands/{mod.rs,sync.rs,tui.rs,wizard.rs}
@@ -116,6 +116,21 @@ Create tests/cli_first_run.rs with tests that launch the binary in an isolated h
             .stderr(predicate::str::contains("cannot be used with"));
     }
 
+    #[test]
+    fn help_is_rendered_in_the_requested_language() {
+        let home = TempDir::new().expect("temp home");
+        command(&home)
+            .args(["--lang", "zh", "--help"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("用法"));
+        command(&home)
+            .args(["--lang", "en", "--help"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Usage"));
+    }
+
 - [ ] **Step 2: Run the tests and confirm the binary is absent**
 
 Run:
@@ -187,6 +202,8 @@ Create AppPaths with a test override:
                 home,
             })
         }
+
+        pub fn from_home(home: impl AsRef<std::path::Path>) -> Self;
     }
 
 - [ ] **Step 4: Implement typed bilingual messages and CLI routing**
@@ -195,7 +212,7 @@ Create Language, Translator, and message keys for first-run guidance, generic fa
 
 Use these public signatures:
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub enum Language { Auto, ZhCn, EnUs }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -237,7 +254,7 @@ Create Cli and RunMode:
         Sync { source: Option<String> },
     }
 
-The temporary mode handlers may return NoSourceConfigured; do not initialize raw terminal mode yet.
+Build Clap's Command through CommandFactory so headings, descriptions, argument help, usage, and validation messages use the selected Translator. The temporary mode handlers may return NoSourceConfigured; do not initialize raw terminal mode yet.
 
 - [ ] **Step 5: Run the focused tests and static checks**
 
@@ -339,7 +356,7 @@ Expected: FAIL because src/config does not exist.
 
 Use this exact public model:
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
     pub struct AppConfig {
         pub version: u32,
         #[serde(default)]
@@ -350,7 +367,7 @@ Use this exact public model:
         pub sources: Vec<SourceConfig>,
     }
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
     pub struct SourceConfig {
         pub name: String,
         #[serde(default = "default_remote_root")]
@@ -361,7 +378,7 @@ Use this exact public model:
         pub kind: SourceKind,
     }
 
-    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+    #[derive(Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
     #[serde(tag = "type", rename_all = "lowercase")]
     pub enum SourceKind {
         WebDav { webdav: WebDavConfig },
@@ -369,6 +386,8 @@ Use this exact public model:
     }
 
 If TOML serialization of the internally tagged enum does not produce the approved nested tables, implement custom Serialize/Deserialize with a private wire struct and lock the exact example in a golden test. Do not change the approved file format to fit a derive.
+
+Credential-bearing configuration types must not derive Debug. Provide a RedactedSource view for diagnostics and TUI rendering.
 
 - [ ] **Step 4: Implement atomic storage**
 
@@ -695,6 +714,7 @@ Commit:
 - Create: src/restore/archive.rs
 - Create: src/restore/backup.rs
 - Create: src/restore/database.rs
+- Create: src/restore/schema.rs
 - Create: src/restore/service.rs
 - Modify: Cargo.toml
 - Modify: src/error.rs
@@ -718,6 +738,7 @@ Tests must verify:
 - SQL executes in a temporary database before live replacement;
 - local-only tables are copied from the existing database;
 - provider_health is not copied;
+- legacy db-v5 schema is migrated to the current supported shape;
 - a durable backup contains database, Skills, and metadata;
 - forced database replacement failure restores the original Skills;
 - missing ~/.cc-switch is created only after all remote validation passes.
@@ -785,6 +806,8 @@ Check the export header, execute the SQL in the temporary database, verify requi
     usage_daily_rollups
 
 Do not copy provider_health.
+
+Port the schema creation and migrations needed to accept the current db-v6 and WebDAV legacy db-v5 exports into restore/schema.rs. Run migrations only on the prepared temporary database, then validate the current required columns and indexes before live replacement.
 
 - [ ] **Step 6: Implement durable backup and rollback**
 
@@ -1006,6 +1029,8 @@ Assert:
 5. Codex multi-file failure rolls all Codex files back;
 6. Linux Claude Desktop is skipped;
 7. Claude Desktop proxy mode becomes a warning because v1 has no proxy runtime.
+8. commonConfigEnabled applies the stored common snippet only to supported providers.
+9. a failed manual exclusive switch restores the original live files, device current ID, database current ID, and any backfilled provider data.
 
 - [ ] **Step 2: Run provider tests**
 
@@ -1058,7 +1083,7 @@ Do not port proxy takeover, hot-switch, usage, failover, session, OMO, or Tauri 
 
 - [ ] **Step 5: Implement manual exclusive switching separately**
 
-switch_exclusive() is used only by the TUI. It must validate the provider, backfill the prior live provider only for compatible normal mode, update device-local current provider, update database is_current, write the target live files, and rely on Task 9 to re-project that Agent's MCP.
+switch_exclusive() is used only by the TUI. It must validate the provider, snapshot the affected database rows/settings/live files, backfill the prior live provider only for compatible normal mode, update device-local current provider, update database is_current, write the target live files, and rely on Task 9 to re-project that Agent's MCP. Any failure before completion restores the snapshot so the original provider remains current.
 
 Restore-time project_all() must never call switch_exclusive(), because backfill would contaminate the newly restored database.
 
@@ -1364,6 +1389,8 @@ Use:
     }
 
 App::update(action) must be pure except for queuing commands. Store a cursor and scroll offset per Agent. High-frequency navigation changes state immediately with no animation or artificial delay.
+
+Persist last view, selected Agent/source, pane, and per-Agent cursors to state.json using atomic mode-0600 writes. Corrupt state.json must fall back to defaults without blocking startup.
 
 - [ ] **Step 4: Implement responsive rendering**
 
