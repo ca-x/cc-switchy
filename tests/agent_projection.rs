@@ -1,7 +1,7 @@
 use std::fs;
 
 use cc_switchy::agent::{
-    effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings,
+    effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector,
     ProviderProjector, SkillSyncMethod,
 };
 use cc_switchy::progress::NoopProgress;
@@ -56,6 +56,24 @@ fn provider_database(home: &TempDir) -> std::path::PathBuf {
                VALUES ('common_config_claude', '{"includeCoAuthoredBy":false}');"#,
         )
         .expect("provider rows");
+    path
+}
+
+fn mcp_database(home: &TempDir) -> std::path::PathBuf {
+    let path = provider_database(home);
+    let connection = Connection::open(&path).expect("database");
+    connection
+        .execute_batch(
+            r#"DELETE FROM mcp_servers;
+               INSERT INTO mcp_servers (
+                 id, name, server_config, tags,
+                 enabled_claude, enabled_codex, enabled_gemini, enabled_opencode, enabled_hermes
+               ) VALUES
+                 ('stdio-managed', 'Managed stdio', '{"type":"stdio","command":"npx","args":["-y","mcp-demo"],"env":{"TOKEN":"value"}}', '[]', 1, 1, 1, 1, 1),
+                 ('remote-managed', 'Managed remote', '{"type":"http","url":"https://mcp.example.test/api","headers":{"Authorization":"Bearer test"}}', '[]', 0, 1, 1, 1, 1),
+                 ('known-disabled', 'Known disabled', '{"type":"sse","url":"https://disabled.example.test/sse"}', '[]', 0, 0, 0, 0, 0);"#,
+        )
+        .expect("MCP rows");
     path
 }
 
@@ -397,6 +415,15 @@ fn codex_model_catalog_is_generated_and_referenced_atomically() {
 fn manual_exclusive_switch_updates_device_database_and_live_config() {
     let home = TempDir::new().expect("home");
     let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "INSERT INTO mcp_servers (id, name, server_config, tags, enabled_claude)
+             VALUES ('switch-mcp', 'Switch MCP', '{\"type\":\"stdio\",\"command\":\"mcp-switch\"}', '[]', 1)",
+            [],
+        )
+        .expect("MCP row");
+    drop(connection);
     let settings_path = home.path().join(".cc-switch/settings.json");
     fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
     fs::write(&settings_path, r#"{"currentProviderClaude":"claude-a"}"#).expect("settings");
@@ -429,6 +456,15 @@ fn manual_exclusive_switch_updates_device_database_and_live_config() {
         live.pointer("/env/ANTHROPIC_AUTH_TOKEN")
             .and_then(serde_json::Value::as_str),
         Some("claude-b")
+    );
+    let mcp: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(".claude.json")).expect("Claude MCP after switch"),
+    )
+    .expect("Claude MCP JSON");
+    assert_eq!(
+        mcp.pointer("/mcpServers/switch-mcp/command")
+            .and_then(serde_json::Value::as_str),
+        Some("mcp-switch")
     );
 }
 
@@ -487,4 +523,133 @@ fn failed_manual_switch_restores_files_device_database_and_backfilled_provider()
             .and_then(serde_json::Value::as_str),
         Some("claude-a")
     );
+}
+
+#[test]
+fn mcp_projection_preserves_unknown_entries_and_removes_known_disabled_entries() {
+    let home = TempDir::new().expect("home");
+    let db_path = mcp_database(&home);
+    let claude_path = home.path().join(".claude.json");
+    fs::write(
+        &claude_path,
+        r#"{"keepRoot":true,"mcpServers":{"user-owned":{"command":"local"},"known-disabled":{"url":"old"}}}"#,
+    )
+    .expect("Claude MCP");
+    let codex_dir = home.path().join(".codex");
+    fs::create_dir_all(&codex_dir).expect("Codex dir");
+    fs::write(
+        codex_dir.join("config.toml"),
+        "model = \"keep\"\n[mcp_servers.user-owned]\ncommand = \"local\"\n[mcp_servers.known-disabled]\nurl = \"https://old\"\n",
+    )
+    .expect("Codex MCP");
+    let gemini_dir = home.path().join(".gemini");
+    fs::create_dir_all(&gemini_dir).expect("Gemini dir");
+    fs::write(
+        gemini_dir.join("settings.json"),
+        r#"{"theme":"keep","mcpServers":{"user-owned":{"command":"local"},"known-disabled":{"url":"old"}}}"#,
+    )
+    .expect("Gemini MCP");
+    let opencode_dir = home.path().join(".config/opencode");
+    fs::create_dir_all(&opencode_dir).expect("OpenCode dir");
+    fs::write(
+        opencode_dir.join("opencode.json"),
+        r#"{"provider":{"keep":{}},"mcp":{"user-owned":{"type":"local","command":["local"]},"known-disabled":{"type":"remote","url":"https://old"}}}"#,
+    )
+    .expect("OpenCode MCP");
+    let hermes_dir = home.path().join(".hermes");
+    fs::create_dir_all(&hermes_dir).expect("Hermes dir");
+    fs::write(
+        hermes_dir.join("config.yaml"),
+        "agent:\n  keep: true\nmcp_servers:\n  user-owned:\n    command: local\n    timeout: 9\n  known-disabled:\n    url: https://old\n",
+    )
+    .expect("Hermes MCP");
+
+    let settings = DeviceSettings::default();
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+    let report = McpProjector::new(&repo, &paths, Arc::new(NoopProgress)).project_all();
+
+    let claude: serde_json::Value =
+        serde_json::from_slice(&fs::read(&claude_path).expect("Claude output"))
+            .expect("Claude JSON");
+    assert_eq!(claude["keepRoot"], true);
+    assert!(claude.pointer("/mcpServers/user-owned").is_some());
+    assert!(claude.pointer("/mcpServers/stdio-managed").is_some());
+    assert!(claude.pointer("/mcpServers/remote-managed").is_none());
+    assert!(claude.pointer("/mcpServers/known-disabled").is_none());
+
+    let codex: toml::Value =
+        toml::from_str(&fs::read_to_string(codex_dir.join("config.toml")).expect("Codex output"))
+            .expect("Codex TOML");
+    assert_eq!(codex["model"].as_str(), Some("keep"));
+    assert!(codex["mcp_servers"].get("user-owned").is_some());
+    assert_eq!(
+        codex["mcp_servers"]["stdio-managed"]["command"].as_str(),
+        Some("npx")
+    );
+    assert_eq!(
+        codex["mcp_servers"]["remote-managed"]["http_headers"]["Authorization"].as_str(),
+        Some("Bearer test")
+    );
+    assert!(codex["mcp_servers"].get("known-disabled").is_none());
+
+    let gemini: serde_json::Value =
+        serde_json::from_slice(&fs::read(gemini_dir.join("settings.json")).expect("Gemini output"))
+            .expect("Gemini JSON");
+    assert_eq!(gemini["theme"], "keep");
+    assert!(gemini.pointer("/mcpServers/user-owned").is_some());
+    assert!(gemini.pointer("/mcpServers/stdio-managed").is_some());
+    assert!(gemini.pointer("/mcpServers/known-disabled").is_none());
+
+    let opencode: serde_json::Value = serde_json::from_slice(
+        &fs::read(opencode_dir.join("opencode.json")).expect("OpenCode output"),
+    )
+    .expect("OpenCode JSON");
+    assert!(opencode.pointer("/provider/keep").is_some());
+    assert!(opencode.pointer("/mcp/user-owned").is_some());
+    assert_eq!(opencode["mcp"]["stdio-managed"]["type"], "local");
+    assert_eq!(
+        opencode["mcp"]["stdio-managed"]["command"],
+        serde_json::json!(["npx", "-y", "mcp-demo"])
+    );
+    assert_eq!(opencode["mcp"]["remote-managed"]["type"], "remote");
+    assert!(opencode.pointer("/mcp/known-disabled").is_none());
+
+    let hermes: serde_yaml::Value = serde_yaml::from_str(
+        &fs::read_to_string(hermes_dir.join("config.yaml")).expect("Hermes output"),
+    )
+    .expect("Hermes YAML");
+    assert_eq!(hermes["agent"]["keep"].as_bool(), Some(true));
+    assert!(hermes["mcp_servers"].get("user-owned").is_some());
+    assert_eq!(
+        hermes["mcp_servers"]["remote-managed"]["url"].as_str(),
+        Some("https://mcp.example.test/api")
+    );
+    assert!(hermes["mcp_servers"].get("known-disabled").is_none());
+    assert!(report.skipped_agents.contains(&Agent::ClaudeDesktop));
+    assert!(report.skipped_agents.contains(&Agent::OpenClaw));
+    assert!(report.warnings.is_empty());
+}
+
+#[test]
+fn corrupt_mcp_config_warns_without_blocking_other_agents() {
+    let home = TempDir::new().expect("home");
+    let db_path = mcp_database(&home);
+    fs::write(home.path().join(".claude.json"), "[").expect("corrupt Claude config");
+    let settings = DeviceSettings::default();
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+
+    let report = McpProjector::new(&repo, &paths, Arc::new(NoopProgress)).project_all();
+
+    assert!(report
+        .warnings
+        .iter()
+        .any(|warning| warning.agent == Some(Agent::Claude)));
+    assert!(report.applied_agents.contains(&Agent::Gemini));
+    let gemini: serde_json::Value = serde_json::from_slice(
+        &fs::read(home.path().join(".gemini/settings.json")).expect("Gemini output"),
+    )
+    .expect("Gemini JSON");
+    assert!(gemini.pointer("/mcpServers/stdio-managed").is_some());
 }

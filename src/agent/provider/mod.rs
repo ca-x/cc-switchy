@@ -151,6 +151,22 @@ impl<'a> ProviderProjector<'a> {
             )));
         }
 
+        if agent.supports_mcp() {
+            let projector =
+                super::McpProjector::new(self.repo, self.paths, Arc::clone(&self.progress));
+            if let Err(error) = projector.project_agent(agent) {
+                // The provider switch is already committed. MCP is a follow-up
+                // projection, so surface a structured Activity warning without
+                // rolling a working provider back.
+                self.progress.emit(ProgressEvent::Warning {
+                    stage: "mcp".to_string(),
+                    agent: Some(agent.to_string()),
+                    message_key: MessageKey::UnexpectedError,
+                    detail: error.to_string(),
+                });
+            }
+        }
+
         Ok(())
     }
 

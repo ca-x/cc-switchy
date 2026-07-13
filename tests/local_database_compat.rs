@@ -2,7 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cc_switchy::agent::{Agent, AgentPaths, AgentRepository, DeviceSettings, ProviderProjector};
+use cc_switchy::agent::{
+    Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector, ProviderProjector,
+};
 use cc_switchy::progress::NoopProgress;
 use tempfile::TempDir;
 
@@ -73,4 +75,11 @@ fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
             report.warnings
         );
     }
+
+    let mcp_report = McpProjector::new(&repo, &paths, Arc::new(NoopProgress)).project_all();
+    assert!(
+        mcp_report.warnings.is_empty(),
+        "real compatibility MCP projection warnings: {:?}",
+        mcp_report.warnings
+    );
 }

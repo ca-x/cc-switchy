@@ -1,9 +1,11 @@
+mod mcp;
 mod model;
 mod paths;
 mod provider;
 mod repository;
 mod settings;
 
+pub use mcp::McpProjector;
 pub use model::{
     Agent, AgentFlags, InstalledSkill, McpServer, ProjectionReport, ProjectionStage,
     ProjectionWarning, Provider, ProviderMeta, SkillSyncMethod,
