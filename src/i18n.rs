@@ -89,6 +89,74 @@ pub enum MessageKey {
     SyncSummary,
     ErrorCancelled,
     ErrorSyncLocked,
+    TuiProviders,
+    TuiSkills,
+    TuiActivity,
+    TuiSources,
+    TuiAgents,
+    TuiDetails,
+    TuiResize,
+    TuiNoSources,
+    TuiNoProviders,
+    WizardTitle,
+    WizardChooseType,
+    WizardConfirmDelete,
+    TuiProgress,
+    TuiActivityLog,
+    TuiStage,
+    TuiElapsed,
+    TuiReady,
+    TuiFailedAgents,
+    TuiRetry,
+    TuiType,
+    TuiEndpoint,
+    TuiRemotePath,
+    TuiStatus,
+    TuiNotTested,
+    TuiCurrent,
+    TuiAvailable,
+    TuiAdditiveSet,
+    TuiCategory,
+    TuiUnmanaged,
+    TuiBytes,
+    TuiDefault,
+    TuiFooter,
+    TuiWorking,
+    WizardResize,
+    WizardNoSources,
+    WizardFooter,
+    WizardDetails,
+    WizardEditHint,
+    WizardSaved,
+    WizardTesting,
+    WizardConnectedEmpty,
+    WizardRequired,
+    WizardReplacement,
+    WizardLanguage,
+    WizardConfirmHint,
+    WizardAutoLanguage,
+    FieldName,
+    FieldBaseUrl,
+    FieldUsername,
+    FieldPassword,
+    FieldRemoteRoot,
+    FieldProfile,
+    FieldRegion,
+    FieldBucket,
+    FieldEndpoint,
+    FieldAccessKeyId,
+    FieldSecretKey,
+    ActivitySyncActive,
+    ActivityOperationRunning,
+    ActivityCancelRequested,
+    ActivityDefaultChanged,
+    ActivityWizardBlocked,
+    ActivitySwitched,
+    ActivityReapplied,
+    ActivityRetryComplete,
+    ActivitySyncFinished,
+    ActivitySnapshot,
+    ActivityConnectedEmpty,
     ErrorManifestTooLarge,
     ErrorManifestParse,
     ErrorManifestFormat,
@@ -141,6 +209,8 @@ impl Translator {
         let applied = || message_arg(_args, "applied");
         let warnings = || message_arg(_args, "warnings");
         let backup = || message_arg(_args, "backup");
+        let agent = || message_arg(_args, "agent");
+        let provider = || message_arg(_args, "provider");
         let text = match (self.language, key) {
             (Language::ZhCn, MessageKey::NoSourceConfigured) => "尚未配置来源。",
             (Language::ZhCn, MessageKey::RunWizard) => "请运行：cc-switchy --wizard",
@@ -191,11 +261,11 @@ impl Translator {
                 return format!("正在校验 {}", artifact());
             }
             (Language::ZhCn, MessageKey::ProgressPreparingBackup) => "正在备份本地数据",
-            (Language::ZhCn, MessageKey::ProgressRestoringSkills) => "正在恢复 Skills",
+            (Language::ZhCn, MessageKey::ProgressRestoringSkills) => "正在恢复技能",
             (Language::ZhCn, MessageKey::ProgressImportingDatabase) => "正在导入数据库",
             (Language::ZhCn, MessageKey::ProgressApplyingProvider) => "正在应用供应商",
             (Language::ZhCn, MessageKey::ProgressApplyingMcp) => "正在应用 MCP",
-            (Language::ZhCn, MessageKey::ProgressApplyingSkills) => "正在应用 Skills",
+            (Language::ZhCn, MessageKey::ProgressApplyingSkills) => "正在应用技能",
             (Language::ZhCn, MessageKey::ProgressRetrying) => "正在重试操作",
             (Language::ZhCn, MessageKey::ProgressWarning) => "警告",
             (Language::ZhCn, MessageKey::ProgressCompleted) => "同步完成",
@@ -212,6 +282,96 @@ impl Translator {
             }
             (Language::ZhCn, MessageKey::ErrorCancelled) => "同步已取消",
             (Language::ZhCn, MessageKey::ErrorSyncLocked) => "另一个同步或恢复操作正在运行",
+            (Language::ZhCn, MessageKey::TuiProviders) => "供应商",
+            (Language::ZhCn, MessageKey::TuiSkills) => "技能",
+            (Language::ZhCn, MessageKey::TuiActivity) => "活动",
+            (Language::ZhCn, MessageKey::TuiSources) => "同步源",
+            (Language::ZhCn, MessageKey::TuiAgents) => "智能体",
+            (Language::ZhCn, MessageKey::TuiDetails) => "详情",
+            (Language::ZhCn, MessageKey::TuiResize) => "终端过小，请调整到至少 60×18。",
+            (Language::ZhCn, MessageKey::TuiNoSources) => {
+                "尚未配置同步源。\n请运行：cc-switchy --wizard"
+            }
+            (Language::ZhCn, MessageKey::TuiNoProviders) => "此智能体没有可用供应商",
+            (Language::ZhCn, MessageKey::WizardTitle) => "同步源向导",
+            (Language::ZhCn, MessageKey::WizardChooseType) => "选择同步源类型",
+            (Language::ZhCn, MessageKey::WizardConfirmDelete) => "确认删除所选同步源？",
+            (Language::ZhCn, MessageKey::TuiProgress) => "进度",
+            (Language::ZhCn, MessageKey::TuiActivityLog) => "活动记录",
+            (Language::ZhCn, MessageKey::TuiStage) => "阶段",
+            (Language::ZhCn, MessageKey::TuiElapsed) => "耗时",
+            (Language::ZhCn, MessageKey::TuiReady) => "就绪",
+            (Language::ZhCn, MessageKey::TuiFailedAgents) => "失败的智能体",
+            (Language::ZhCn, MessageKey::TuiRetry) => "重试",
+            (Language::ZhCn, MessageKey::TuiType) => "类型",
+            (Language::ZhCn, MessageKey::TuiEndpoint) => "端点",
+            (Language::ZhCn, MessageKey::TuiRemotePath) => "远程路径",
+            (Language::ZhCn, MessageKey::TuiStatus) => "状态",
+            (Language::ZhCn, MessageKey::TuiNotTested) => "尚未测试",
+            (Language::ZhCn, MessageKey::TuiCurrent) => "当前",
+            (Language::ZhCn, MessageKey::TuiAvailable) => "可用",
+            (Language::ZhCn, MessageKey::TuiAdditiveSet) => "累加式受管集合",
+            (Language::ZhCn, MessageKey::TuiCategory) => "分类",
+            (Language::ZhCn, MessageKey::TuiUnmanaged) => "未受管",
+            (Language::ZhCn, MessageKey::TuiBytes) => "字节",
+            (Language::ZhCn, MessageKey::TuiDefault) => "默认",
+            (Language::ZhCn, MessageKey::TuiFooter) => {
+                "↑↓ 移动  Tab 切换焦点  [ ] 智能体  Enter 应用  s 同步  w 向导  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::TuiWorking) => "正在工作 · 恢复前可按 Esc 取消",
+            (Language::ZhCn, MessageKey::WizardResize) => "终端过小，请调整到至少 50×15。",
+            (Language::ZhCn, MessageKey::WizardNoSources) => {
+                "还没有同步源 · 按 a 添加 WebDAV 或 S3"
+            }
+            (Language::ZhCn, MessageKey::WizardFooter) => {
+                "a 添加  e 编辑  Enter 详情/保存  x 删除  t 测试  m 默认  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::WizardDetails) => "详情",
+            (Language::ZhCn, MessageKey::WizardEditHint) => {
+                "编辑 · Tab 切换字段 · Enter 下一项/保存 · Esc 放弃"
+            }
+            (Language::ZhCn, MessageKey::WizardSaved) => "✓ 已保存",
+            (Language::ZhCn, MessageKey::WizardTesting) => "正在测试…",
+            (Language::ZhCn, MessageKey::WizardConnectedEmpty) => "! 已连接，但没有可用快照",
+            (Language::ZhCn, MessageKey::WizardRequired) => "请填写所有必填字段",
+            (Language::ZhCn, MessageKey::WizardReplacement) => "选择新的默认同步源",
+            (Language::ZhCn, MessageKey::WizardLanguage) => "语言",
+            (Language::ZhCn, MessageKey::WizardConfirmHint) => "Enter 确认 · Esc 取消",
+            (Language::ZhCn, MessageKey::WizardAutoLanguage) => "跟随系统",
+            (Language::ZhCn, MessageKey::FieldName) => "名称",
+            (Language::ZhCn, MessageKey::FieldBaseUrl) => "基础 URL",
+            (Language::ZhCn, MessageKey::FieldUsername) => "用户名",
+            (Language::ZhCn, MessageKey::FieldPassword) => "密码",
+            (Language::ZhCn, MessageKey::FieldRemoteRoot) => "远程根目录",
+            (Language::ZhCn, MessageKey::FieldProfile) => "配置档",
+            (Language::ZhCn, MessageKey::FieldRegion) => "区域",
+            (Language::ZhCn, MessageKey::FieldBucket) => "存储桶",
+            (Language::ZhCn, MessageKey::FieldEndpoint) => "端点",
+            (Language::ZhCn, MessageKey::FieldAccessKeyId) => "访问密钥 ID",
+            (Language::ZhCn, MessageKey::FieldSecretKey) => "秘密访问密钥",
+            (Language::ZhCn, MessageKey::ActivitySyncActive) => "同步正在运行，请先取消再退出。",
+            (Language::ZhCn, MessageKey::ActivityOperationRunning) => "另一个操作正在运行。",
+            (Language::ZhCn, MessageKey::ActivityCancelRequested) => "已请求取消。",
+            (Language::ZhCn, MessageKey::ActivityDefaultChanged) => {
+                return format!("默认同步源已切换为 {}。", source());
+            }
+            (Language::ZhCn, MessageKey::ActivityWizardBlocked) => {
+                "请先完成或取消当前同步，再打开向导。"
+            }
+            (Language::ZhCn, MessageKey::ActivitySwitched) => {
+                return format!("{} 已切换到 {}。", agent(), provider());
+            }
+            (Language::ZhCn, MessageKey::ActivityReapplied) => {
+                return format!("已重新应用 {} 的供应商。", agent());
+            }
+            (Language::ZhCn, MessageKey::ActivityRetryComplete) => "投影重试完成。",
+            (Language::ZhCn, MessageKey::ActivitySyncFinished) => {
+                return format!("同步完成，警告 {} 项。", warnings());
+            }
+            (Language::ZhCn, MessageKey::ActivitySnapshot) => {
+                return format!("✓ 快照 {}", snapshot());
+            }
+            (Language::ZhCn, MessageKey::ActivityConnectedEmpty) => "! 已连接，但没有快照",
             (Language::ZhCn, MessageKey::ErrorManifestTooLarge) => {
                 return format!("manifest 大小为 {} 字节，超过 {} 字节上限", size(), max());
             }
@@ -377,6 +537,126 @@ impl Translator {
             }
             (Language::Auto | Language::EnUs, MessageKey::ErrorSyncLocked) => {
                 "Another sync or restore operation is already running"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiProviders) => "Providers",
+            (Language::Auto | Language::EnUs, MessageKey::TuiSkills) => "Skills",
+            (Language::Auto | Language::EnUs, MessageKey::TuiActivity) => "Activity",
+            (Language::Auto | Language::EnUs, MessageKey::TuiSources) => "Sources",
+            (Language::Auto | Language::EnUs, MessageKey::TuiAgents) => "Agents",
+            (Language::Auto | Language::EnUs, MessageKey::TuiDetails) => "Details",
+            (Language::Auto | Language::EnUs, MessageKey::TuiResize) => {
+                "Terminal is too small. Resize to at least 60×18."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiNoSources) => {
+                "No sync source is configured.\nRun: cc-switchy --wizard"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiNoProviders) => {
+                "No providers are available for this Agent"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardTitle) => "Sync Sources Wizard",
+            (Language::Auto | Language::EnUs, MessageKey::WizardChooseType) => {
+                "Choose a source type"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardConfirmDelete) => {
+                "Delete the selected source?"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiProgress) => "Progress",
+            (Language::Auto | Language::EnUs, MessageKey::TuiActivityLog) => "Activity log",
+            (Language::Auto | Language::EnUs, MessageKey::TuiStage) => "Stage",
+            (Language::Auto | Language::EnUs, MessageKey::TuiElapsed) => "Elapsed",
+            (Language::Auto | Language::EnUs, MessageKey::TuiReady) => "Ready",
+            (Language::Auto | Language::EnUs, MessageKey::TuiFailedAgents) => "Failed Agents",
+            (Language::Auto | Language::EnUs, MessageKey::TuiRetry) => "retry",
+            (Language::Auto | Language::EnUs, MessageKey::TuiType) => "Type",
+            (Language::Auto | Language::EnUs, MessageKey::TuiEndpoint) => "Endpoint",
+            (Language::Auto | Language::EnUs, MessageKey::TuiRemotePath) => "Remote path",
+            (Language::Auto | Language::EnUs, MessageKey::TuiStatus) => "Status",
+            (Language::Auto | Language::EnUs, MessageKey::TuiNotTested) => "Not tested",
+            (Language::Auto | Language::EnUs, MessageKey::TuiCurrent) => "current",
+            (Language::Auto | Language::EnUs, MessageKey::TuiAvailable) => "available",
+            (Language::Auto | Language::EnUs, MessageKey::TuiAdditiveSet) => "additive managed set",
+            (Language::Auto | Language::EnUs, MessageKey::TuiCategory) => "Category",
+            (Language::Auto | Language::EnUs, MessageKey::TuiUnmanaged) => "unmanaged",
+            (Language::Auto | Language::EnUs, MessageKey::TuiBytes) => "bytes",
+            (Language::Auto | Language::EnUs, MessageKey::TuiDefault) => "DEFAULT",
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooter) => {
+                "↑↓ move  Tab focus  [ ] Agent  Enter apply  s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiWorking) => {
+                "working · Esc cancels before restore"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardResize) => {
+                "Resize terminal to at least 50×15"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardNoSources) => {
+                "No sources yet · press a to add WebDAV or S3"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooter) => {
+                "a add  e edit  Enter details/save  x delete  t test  m default  L language  q exit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardDetails) => "Details",
+            (Language::Auto | Language::EnUs, MessageKey::WizardEditHint) => {
+                "Edit · Tab field · Enter next/save · Esc discard"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardSaved) => "✓ Saved",
+            (Language::Auto | Language::EnUs, MessageKey::WizardTesting) => "Testing…",
+            (Language::Auto | Language::EnUs, MessageKey::WizardConnectedEmpty) => {
+                "! Connected, no snapshot available"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardRequired) => {
+                "All required fields must be filled"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardReplacement) => {
+                "Choose replacement default"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardLanguage) => "Language",
+            (Language::Auto | Language::EnUs, MessageKey::WizardConfirmHint) => {
+                "Enter confirm · Esc cancel"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardAutoLanguage) => "Auto",
+            (Language::Auto | Language::EnUs, MessageKey::FieldName) => "Name",
+            (Language::Auto | Language::EnUs, MessageKey::FieldBaseUrl) => "Base URL",
+            (Language::Auto | Language::EnUs, MessageKey::FieldUsername) => "Username",
+            (Language::Auto | Language::EnUs, MessageKey::FieldPassword) => "Password",
+            (Language::Auto | Language::EnUs, MessageKey::FieldRemoteRoot) => "Remote root",
+            (Language::Auto | Language::EnUs, MessageKey::FieldProfile) => "Profile",
+            (Language::Auto | Language::EnUs, MessageKey::FieldRegion) => "Region",
+            (Language::Auto | Language::EnUs, MessageKey::FieldBucket) => "Bucket",
+            (Language::Auto | Language::EnUs, MessageKey::FieldEndpoint) => "Endpoint",
+            (Language::Auto | Language::EnUs, MessageKey::FieldAccessKeyId) => "Access key ID",
+            (Language::Auto | Language::EnUs, MessageKey::FieldSecretKey) => "Secret key",
+            (Language::Auto | Language::EnUs, MessageKey::ActivitySyncActive) => {
+                "A sync is active. Cancel it before quitting."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityOperationRunning) => {
+                "Another operation is already running."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityCancelRequested) => {
+                "Cancellation requested."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityDefaultChanged) => {
+                return format!("Default source changed to {}.", source());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityWizardBlocked) => {
+                "Finish or cancel the active sync before opening the wizard."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivitySwitched) => {
+                return format!("{} switched to {}.", agent(), provider());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityReapplied) => {
+                return format!("{} providers reapplied.", agent());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityRetryComplete) => {
+                "Projection retry completed."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivitySyncFinished) => {
+                return format!("Sync finished with {} warning(s).", warnings());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivitySnapshot) => {
+                return format!("✓ Snapshot {}", snapshot());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityConnectedEmpty) => {
+                "! Connected, no snapshot"
             }
             (Language::Auto | Language::EnUs, MessageKey::ErrorManifestTooLarge) => {
                 return format!("manifest size {} exceeds the {} byte limit", size(), max());

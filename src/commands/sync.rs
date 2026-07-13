@@ -364,8 +364,17 @@ fn persist_state(
         backup_dir: backup_dir.display().to_string(),
         warnings,
     };
+    let mut root = fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    root.insert(
+        "lastSync".to_string(),
+        serde_json::to_value(&state).map_err(|error| AppError::Restore(error.to_string()))?,
+    );
     let mut bytes =
-        serde_json::to_vec_pretty(&state).map_err(|error| AppError::Restore(error.to_string()))?;
+        serde_json::to_vec_pretty(&root).map_err(|error| AppError::Restore(error.to_string()))?;
     bytes.push(b'\n');
     let mut temporary =
         NamedTempFile::new_in(parent).map_err(|error| AppError::io(parent, error))?;

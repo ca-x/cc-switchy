@@ -1,7 +1,7 @@
 use std::ffi::OsString;
 use std::process::ExitCode;
 
-use cc_switchy::config::{ConfigStore, SourceCatalog};
+use cc_switchy::config::ConfigStore;
 use cc_switchy::{
     commands, AppError, AppPaths, Cli, Language, MessageArgs, MessageKey, RunMode, Translator,
 };
@@ -36,7 +36,7 @@ async fn main() -> ExitCode {
         Err(error) => Err(error),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(exit_code) => exit_code,
         Err(AppError::NoSourceConfigured) => {
             let args = MessageArgs::default();
             eprintln!(
@@ -48,10 +48,7 @@ async fn main() -> ExitCode {
         }
         Err(error) => {
             let args = MessageArgs::default();
-            let exit_code = match error {
-                AppError::SyncLocked | AppError::Cancelled => 2,
-                _ => 1,
-            };
+            let exit_code = 1;
             let detail = match &error {
                 AppError::HomeDirectoryUnavailable => {
                     translator.text(MessageKey::HomeDirectoryUnavailable, &args)
@@ -70,7 +67,11 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn dispatch(mode: RunMode, paths: AppPaths, translator: &Translator) -> Result<(), AppError> {
+async fn dispatch(
+    mode: RunMode,
+    paths: AppPaths,
+    translator: &Translator,
+) -> Result<ExitCode, AppError> {
     match mode {
         RunMode::Sync { source } => {
             let cancellation = CancellationToken::new();
@@ -80,17 +81,19 @@ async fn dispatch(mode: RunMode, paths: AppPaths, translator: &Translator) -> Re
                     signal.cancel();
                 }
             });
-            commands::run_cli(paths, source, translator, cancellation)
-                .await
-                .map(|_| ())
+            let outcome = commands::run_cli(paths, source, translator, cancellation).await?;
+            if outcome.projection.warnings.is_empty() {
+                Ok(ExitCode::SUCCESS)
+            } else {
+                Ok(ExitCode::from(2))
+            }
         }
-        RunMode::Tui { .. } | RunMode::Wizard => {
-            let catalog = SourceCatalog::load(ConfigStore::new(paths.config_file))?;
-            catalog.resolve(None).map(|_| ())?;
-            Err(AppError::Restore(
-                "interactive mode is not implemented yet".to_string(),
-            ))
-        }
+        RunMode::Tui { source } => commands::tui::run(paths, translator.language(), source)
+            .await
+            .map(|()| ExitCode::SUCCESS),
+        RunMode::Wizard => commands::wizard::run(paths, translator.language())
+            .await
+            .map(|()| ExitCode::SUCCESS),
     }
 }
 

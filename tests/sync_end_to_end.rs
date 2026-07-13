@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::sync::{Arc, Mutex};
 
@@ -5,7 +6,10 @@ use assert_cmd::Command;
 use cc_switchy::commands::{SyncRequest, SyncService};
 use cc_switchy::config::{ConfigStore, SourceCatalog, SourceConfig, SourceKind, WebDavConfig};
 use cc_switchy::progress::{ProgressEvent, ProgressSink};
-use cc_switchy::remote::protocol::{REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP};
+use cc_switchy::remote::protocol::{
+    compute_snapshot_id, sha256_hex, ArtifactMeta, SyncManifest, DB_COMPAT_VERSION,
+    PROTOCOL_FORMAT, PROTOCOL_VERSION, REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,
+};
 use cc_switchy::restore::SyncLockGuard;
 use cc_switchy::{AppError, AppPaths};
 use httpmock::prelude::*;
@@ -77,24 +81,62 @@ fn catalog(paths: &AppPaths, sources: impl IntoIterator<Item = SourceConfig>) ->
 }
 
 fn mount_snapshot(server: &MockServer) -> (Mock<'_>, Mock<'_>, Mock<'_>) {
+    mount_snapshot_bytes(server, MANIFEST, DATABASE, SKILLS)
+}
+
+fn mount_snapshot_bytes<'a>(
+    server: &'a MockServer,
+    manifest_bytes: &'a [u8],
+    database_bytes: &'a [u8],
+    skills_bytes: &'a [u8],
+) -> (Mock<'a>, Mock<'a>, Mock<'a>) {
     let manifest = server.mock(|when, then| {
         when.method(GET).path(format!(
             "/cc-switch-sync/v2/db-v6/default/{REMOTE_MANIFEST}"
         ));
-        then.status(200).body(MANIFEST);
+        then.status(200).body(manifest_bytes);
     });
     let database = server.mock(|when, then| {
         when.method(GET)
             .path(format!("/cc-switch-sync/v2/db-v6/default/{REMOTE_DB_SQL}"));
-        then.status(200).body(DATABASE);
+        then.status(200).body(database_bytes);
     });
     let skills = server.mock(|when, then| {
         when.method(GET).path(format!(
             "/cc-switch-sync/v2/db-v6/default/{REMOTE_SKILLS_ZIP}"
         ));
-        then.status(200).body(SKILLS);
+        then.status(200).body(skills_bytes);
     });
     (manifest, database, skills)
+}
+
+fn manifest_for(database: &[u8], skills: &[u8]) -> Vec<u8> {
+    let mut artifacts = BTreeMap::new();
+    artifacts.insert(
+        REMOTE_DB_SQL.to_string(),
+        ArtifactMeta {
+            sha256: sha256_hex(database),
+            size: database.len() as u64,
+        },
+    );
+    artifacts.insert(
+        REMOTE_SKILLS_ZIP.to_string(),
+        ArtifactMeta {
+            sha256: sha256_hex(skills),
+            size: skills.len() as u64,
+        },
+    );
+    let snapshot_id = compute_snapshot_id(&artifacts);
+    serde_json::to_vec(&SyncManifest {
+        format: PROTOCOL_FORMAT.to_string(),
+        version: PROTOCOL_VERSION,
+        db_compat_version: Some(DB_COMPAT_VERSION),
+        device_name: "fixture".to_string(),
+        created_at: "2026-07-13T10:42:00Z".to_string(),
+        artifacts,
+        snapshot_id,
+    })
+    .expect("manifest")
 }
 
 #[tokio::test]
@@ -260,7 +302,8 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .env_remove("LANG")
         .args(["--sync", "--lang", "en"])
         .assert()
-        .success()
+        .failure()
+        .code(2)
         .stdout(predicate::str::contains("Sync succeeded"))
         .stdout(predicate::str::contains("Source: home"))
         .stderr(predicate::str::contains("Acquiring the sync lock"))
@@ -278,8 +321,38 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .args(["--sync", "--lang", "en"])
         .assert()
         .failure()
-        .code(2)
+        .code(1)
         .stderr(predicate::str::contains(
             "Another sync or restore operation is already running",
         ));
+}
+
+#[test]
+fn cli_sync_returns_zero_when_every_projection_succeeds() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    let server = MockServer::start();
+    let valid_database = String::from_utf8(DATABASE.to_vec())
+        .expect("fixture SQL")
+        .replace(
+            r#"{"api_key":"fixture-only"}"#,
+            r#"{"auth":{},"config":"model = \"gpt-5\"\n"}"#,
+        )
+        .into_bytes();
+    let manifest = manifest_for(&valid_database, SKILLS);
+    let (manifest_mock, database_mock, skills_mock) =
+        mount_snapshot_bytes(&server, &manifest, &valid_database, SKILLS);
+    let _catalog = catalog(&paths, [source("home", server.base_url())]);
+
+    let mut command = Command::cargo_bin("cc-switchy").expect("binary");
+    command
+        .env("CC_SWITCHY_TEST_HOME", home.path())
+        .env("CC_SWITCH_TEST_HOME", home.path())
+        .args(["--sync", "--lang", "en"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Warnings: 0"));
+    manifest_mock.assert_calls(1);
+    database_mock.assert_calls(1);
+    skills_mock.assert_calls(1);
 }

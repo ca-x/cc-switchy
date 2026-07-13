@@ -8,6 +8,7 @@ pub mod paths;
 pub mod progress;
 pub mod remote;
 pub mod restore;
+pub mod tui;
 
 pub use cli::{Cli, RunMode};
 pub use error::AppError;
