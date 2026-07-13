@@ -94,6 +94,8 @@ pub enum AppError {
     ResponseTooLarge { target: String, size: u64, max: u64 },
     #[error("another sync or restore operation is already running")]
     SyncLocked,
+    #[error("synchronization was cancelled")]
+    Cancelled,
     #[error("skills archive contains an unsafe path: {path}")]
     ArchiveUnsafePath { path: String },
     #[error("skills archive contains {count} entries, exceeding the limit of {max}")]

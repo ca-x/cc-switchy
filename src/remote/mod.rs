@@ -4,12 +4,49 @@ use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
+use crate::config::{SourceConfig, SourceKind};
 use crate::progress::{ProgressEvent, ProgressSink};
 use crate::AppError;
 
 pub mod protocol;
 pub mod s3;
 pub mod webdav;
+
+pub enum RemoteClient {
+    WebDav(webdav::WebDavClient),
+    S3(s3::S3Client),
+}
+
+impl RemoteClient {
+    pub fn new(
+        source: SourceConfig,
+        progress: std::sync::Arc<dyn ProgressSink>,
+    ) -> Result<Self, AppError> {
+        let client = reqwest::Client::builder().build().map_err(|error| {
+            AppError::InvalidConfig(format!("HTTP client setup failed: {error}"))
+        })?;
+        match &source.kind {
+            SourceKind::WebDav { .. } => {
+                webdav::WebDavClient::new(source, client, progress).map(Self::WebDav)
+            }
+            SourceKind::S3 { .. } => s3::S3Client::new(source, client, progress).map(Self::S3),
+        }
+    }
+
+    pub async fn fetch_snapshot(&self, staging: &Path) -> Result<DownloadedSnapshot, AppError> {
+        match self {
+            Self::WebDav(client) => client.fetch_snapshot(staging).await,
+            Self::S3(client) => client.fetch_snapshot(staging).await,
+        }
+    }
+
+    pub async fn test_connection(&self) -> Result<Option<protocol::ValidatedManifest>, AppError> {
+        match self {
+            Self::WebDav(client) => client.test_connection().await,
+            Self::S3(client) => client.test_connection().await,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct DownloadedSnapshot {

@@ -84,7 +84,11 @@ pub enum MessageKey {
     ProgressApplyingMcp,
     ProgressApplyingSkills,
     ProgressRetrying,
+    ProgressWarning,
     ProgressCompleted,
+    SyncSummary,
+    ErrorCancelled,
+    ErrorSyncLocked,
     ErrorManifestTooLarge,
     ErrorManifestParse,
     ErrorManifestFormat,
@@ -132,6 +136,11 @@ impl Translator {
         let max = || message_arg(_args, "max");
         let expected = || message_arg(_args, "expected");
         let actual = || message_arg(_args, "actual");
+        let snapshot = || message_arg(_args, "snapshot");
+        let duration = || message_arg(_args, "duration");
+        let applied = || message_arg(_args, "applied");
+        let warnings = || message_arg(_args, "warnings");
+        let backup = || message_arg(_args, "backup");
         let text = match (self.language, key) {
             (Language::ZhCn, MessageKey::NoSourceConfigured) => "尚未配置来源。",
             (Language::ZhCn, MessageKey::RunWizard) => "请运行：cc-switchy --wizard",
@@ -188,7 +197,21 @@ impl Translator {
             (Language::ZhCn, MessageKey::ProgressApplyingMcp) => "正在应用 MCP",
             (Language::ZhCn, MessageKey::ProgressApplyingSkills) => "正在应用 Skills",
             (Language::ZhCn, MessageKey::ProgressRetrying) => "正在重试操作",
+            (Language::ZhCn, MessageKey::ProgressWarning) => "警告",
             (Language::ZhCn, MessageKey::ProgressCompleted) => "同步完成",
+            (Language::ZhCn, MessageKey::SyncSummary) => {
+                return format!(
+                    "同步成功\n来源：{}\n快照：{}\n耗时：{}\n应用步骤：{}\n警告：{}\n备份：{}",
+                    source(),
+                    snapshot(),
+                    duration(),
+                    applied(),
+                    warnings(),
+                    backup()
+                );
+            }
+            (Language::ZhCn, MessageKey::ErrorCancelled) => "同步已取消",
+            (Language::ZhCn, MessageKey::ErrorSyncLocked) => "另一个同步或恢复操作正在运行",
             (Language::ZhCn, MessageKey::ErrorManifestTooLarge) => {
                 return format!("manifest 大小为 {} 字节，超过 {} 字节上限", size(), max());
             }
@@ -336,7 +359,25 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::ProgressRetrying) => {
                 "Retrying the operation"
             }
+            (Language::Auto | Language::EnUs, MessageKey::ProgressWarning) => "Warning",
             (Language::Auto | Language::EnUs, MessageKey::ProgressCompleted) => "Sync completed",
+            (Language::Auto | Language::EnUs, MessageKey::SyncSummary) => {
+                return format!(
+                    "Sync succeeded\nSource: {}\nSnapshot: {}\nDuration: {}\nApplied steps: {}\nWarnings: {}\nBackup: {}",
+                    source(),
+                    snapshot(),
+                    duration(),
+                    applied(),
+                    warnings(),
+                    backup()
+                );
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ErrorCancelled) => {
+                "Synchronization was cancelled"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ErrorSyncLocked) => {
+                "Another sync or restore operation is already running"
+            }
             (Language::Auto | Language::EnUs, MessageKey::ErrorManifestTooLarge) => {
                 return format!("manifest size {} exceeds the {} byte limit", size(), max());
             }
