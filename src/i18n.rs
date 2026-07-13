@@ -2,8 +2,11 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Language {
+    #[serde(rename = "auto")]
     Auto,
+    #[serde(rename = "zh-CN")]
     ZhCn,
+    #[serde(rename = "en-US")]
     EnUs,
 }
 
@@ -99,7 +102,7 @@ impl Translator {
             (Language::ZhCn, MessageKey::RunWizard) => "请运行：cc-switchy --wizard",
             (Language::ZhCn, MessageKey::UnexpectedError) => "发生意外错误",
             (Language::ZhCn, MessageKey::HomeDirectoryUnavailable) => "无法确定用户主目录",
-            (Language::ZhCn, MessageKey::HelpAbout) => "切换并同步 Claude Code 来源配置",
+            (Language::ZhCn, MessageKey::HelpAbout) => "从云端恢复 CC Switch 配置到本机",
             (Language::ZhCn, MessageKey::HelpUsage) => "用法",
             (Language::ZhCn, MessageKey::HelpOptions) => "选项",
             (Language::ZhCn, MessageKey::HelpWizard) => "运行配置向导",
@@ -140,7 +143,7 @@ impl Translator {
                 "Home directory is unavailable"
             }
             (Language::Auto | Language::EnUs, MessageKey::HelpAbout) => {
-                "Switch and synchronize Claude Code source configuration"
+                "Restore CC Switch cloud configuration to this machine"
             }
             (Language::Auto | Language::EnUs, MessageKey::HelpUsage) => "Usage",
             (Language::Auto | Language::EnUs, MessageKey::HelpOptions) => "Options",
@@ -198,4 +201,16 @@ impl Translator {
 
 fn message_arg<'a>(args: &'a MessageArgs, key: &'static str) -> &'a str {
     args.0.get(key).map(String::as_str).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Language;
+
+    #[test]
+    fn language_serialization_matches_the_config_contract() {
+        assert_eq!(serde_json::to_string(&Language::Auto).unwrap(), "\"auto\"");
+        assert_eq!(serde_json::to_string(&Language::ZhCn).unwrap(), "\"zh-CN\"");
+        assert_eq!(serde_json::to_string(&Language::EnUs).unwrap(), "\"en-US\"");
+    }
 }
