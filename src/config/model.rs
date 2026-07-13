@@ -211,7 +211,8 @@ impl fmt::Debug for RedactedSource<'_> {
                 .field("type", &"s3")
                 .field("bucket", &s3.bucket)
                 .field("region", &s3.region)
-                .field("endpoint", &safe_endpoint(&s3.endpoint)),
+                .field("endpoint", &safe_endpoint(&s3.endpoint))
+                .field("access_key_id", &mask_access_key_id(&s3.access_key_id)),
         };
         debug.finish()
     }
@@ -242,6 +243,16 @@ fn safe_endpoint(value: &str) -> String {
     url.set_query(None);
     url.set_fragment(None);
     url.to_string()
+}
+
+fn mask_access_key_id(value: &str) -> String {
+    let characters = value.chars().collect::<Vec<_>>();
+    if characters.len() <= 4 {
+        return "****".to_string();
+    }
+    let visible = characters.len().min(4);
+    let prefix = characters[..visible].iter().collect::<String>();
+    format!("{prefix}{}", "*".repeat(characters.len() - visible))
 }
 
 fn default_remote_root() -> String {

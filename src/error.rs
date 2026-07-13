@@ -72,6 +72,20 @@ pub enum AppError {
         status: u16,
         url: String,
     },
+    #[error("S3 {operation} failed ({reason}): {url}")]
+    S3Transport {
+        operation: &'static str,
+        url: String,
+        reason: &'static str,
+    },
+    #[error("S3 {operation} failed with HTTP {status}: {url}")]
+    S3Http {
+        operation: &'static str,
+        status: u16,
+        url: String,
+    },
+    #[error("S3 request signing failed: {0}")]
+    S3Signing(String),
     #[error("source {source_name} has no downloadable snapshot")]
     RemoteEmpty { source_name: String },
     #[error("remote artifact is missing: {artifact}")]

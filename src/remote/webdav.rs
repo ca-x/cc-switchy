@@ -4,16 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::StreamExt;
 use reqwest::{Response, StatusCode, Url};
-use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
 
 use super::protocol::{
-    RemoteLayout, SyncManifest, ValidatedManifest, MAX_MANIFEST_BYTES, MAX_SYNC_ARTIFACT_BYTES,
-    REMOTE_DB_SQL, REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,
+    RemoteLayout, SyncManifest, ValidatedManifest, MAX_MANIFEST_BYTES, REMOTE_DB_SQL,
+    REMOTE_MANIFEST, REMOTE_SKILLS_ZIP,
 };
-use super::DownloadedSnapshot;
+use super::{read_limited_response, write_verified_artifact, DownloadedSnapshot};
 use crate::config::{SourceConfig, SourceKind, WebDavConfig};
 use crate::progress::{ProgressEvent, ProgressSink};
 use crate::AppError;
@@ -119,8 +116,13 @@ impl WebDavClient {
         let Some(response) = self.send_get(&url, "GET manifest").await? else {
             return Ok(None);
         };
-        let bytes =
-            read_limited_response(response, REMOTE_MANIFEST, MAX_MANIFEST_BYTES as u64).await?;
+        let bytes = read_limited_response(
+            response,
+            REMOTE_MANIFEST,
+            MAX_MANIFEST_BYTES as u64,
+            |error| transport_error("read manifest response", &url, error),
+        )
+        .await?;
         self.progress.emit(ProgressEvent::ValidatingManifest);
         let manifest = SyncManifest::parse(&bytes)?.validate(layout)?;
         Ok(Some((manifest, bytes)))
@@ -139,92 +141,15 @@ impl WebDavClient {
                 artifact: artifact.to_string(),
             }
         })?;
-        enforce_content_length(response.content_length(), artifact, MAX_SYNC_ARTIFACT_BYTES)?;
-
-        let target = staging.join(artifact);
-        let mut file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&target)
-            .await
-            .map_err(|error| AppError::io(&target, error))?;
-        let mut stream = response.bytes_stream();
-        let mut downloaded = 0_u64;
-        let mut hasher = Sha256::new();
-        self.progress.emit(ProgressEvent::Downloading {
-            artifact: artifact.to_string(),
-            downloaded,
-            total: meta.size,
-        });
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = match chunk {
-                Ok(chunk) => chunk,
-                Err(error) => {
-                    drop(file);
-                    let _ = tokio::fs::remove_file(&target).await;
-                    return Err(transport_error("read response", &url, &error));
-                }
-            };
-            downloaded = downloaded.saturating_add(chunk.len() as u64);
-            if downloaded > MAX_SYNC_ARTIFACT_BYTES {
-                drop(file);
-                let _ = tokio::fs::remove_file(&target).await;
-                return Err(AppError::ResponseTooLarge {
-                    target: artifact.to_string(),
-                    size: downloaded,
-                    max: MAX_SYNC_ARTIFACT_BYTES,
-                });
-            }
-            if downloaded > meta.size {
-                drop(file);
-                let _ = tokio::fs::remove_file(&target).await;
-                return Err(AppError::ArtifactSizeMismatch {
-                    artifact: artifact.to_string(),
-                    expected: meta.size,
-                    actual: downloaded,
-                });
-            }
-            file.write_all(&chunk)
-                .await
-                .map_err(|error| AppError::io(&target, error))?;
-            hasher.update(&chunk);
-            self.progress.emit(ProgressEvent::Downloading {
-                artifact: artifact.to_string(),
-                downloaded,
-                total: meta.size,
-            });
-        }
-        file.flush()
-            .await
-            .map_err(|error| AppError::io(&target, error))?;
-        file.sync_all()
-            .await
-            .map_err(|error| AppError::io(&target, error))?;
-
-        if downloaded != meta.size {
-            drop(file);
-            let _ = tokio::fs::remove_file(&target).await;
-            return Err(AppError::ArtifactSizeMismatch {
-                artifact: artifact.to_string(),
-                expected: meta.size,
-                actual: downloaded,
-            });
-        }
-        let actual = hex::encode(hasher.finalize());
-        if !actual.eq_ignore_ascii_case(&meta.sha256) {
-            drop(file);
-            let _ = tokio::fs::remove_file(&target).await;
-            return Err(AppError::ArtifactHashMismatch {
-                artifact: artifact.to_string(),
-                expected: meta.sha256.clone(),
-                actual,
-            });
-        }
-        self.progress.emit(ProgressEvent::Verifying {
-            artifact: artifact.to_string(),
-        });
-        Ok(target)
+        write_verified_artifact(
+            response,
+            staging,
+            artifact,
+            meta,
+            self.progress.as_ref(),
+            |error| transport_error("read artifact response", &url, error),
+        )
+        .await
     }
 
     async fn send_get(
@@ -300,45 +225,6 @@ impl WebDavClient {
         segments.extend(split_path(file_name));
         segments
     }
-}
-
-async fn read_limited_response(
-    response: Response,
-    target: &str,
-    max: u64,
-) -> Result<Vec<u8>, AppError> {
-    enforce_content_length(response.content_length(), target, max)?;
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| AppError::WebDavTransport {
-            operation: "read response",
-            url: "<redacted>".to_string(),
-            reason: transport_reason(&error),
-        })?;
-        if bytes.len().saturating_add(chunk.len()) as u64 > max {
-            return Err(AppError::ResponseTooLarge {
-                target: target.to_string(),
-                size: bytes.len().saturating_add(chunk.len()) as u64,
-                max,
-            });
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
-}
-
-fn enforce_content_length(length: Option<u64>, target: &str, max: u64) -> Result<(), AppError> {
-    if let Some(size) = length {
-        if size > max {
-            return Err(AppError::ResponseTooLarge {
-                target: target.to_string(),
-                size,
-                max,
-            });
-        }
-    }
-    Ok(())
 }
 
 fn split_path(raw: &str) -> Vec<String> {
