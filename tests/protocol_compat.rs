@@ -7,6 +7,7 @@ use cc_switchy::remote::protocol::{
     REMOTE_SKILLS_ZIP,
 };
 use cc_switchy::AppError;
+use rusqlite::Connection;
 
 fn fixture() -> Vec<u8> {
     include_bytes!("fixtures/cc-switch-v2/manifest.json").to_vec()
@@ -23,8 +24,14 @@ fn current_manifest_parses_and_validates() {
         .expect("valid current manifest");
 
     assert_eq!(validated.db_compat_version(), DB_COMPAT_VERSION);
-    assert_eq!(validated.artifact(REMOTE_DB_SQL).unwrap().size, 2626);
-    assert_eq!(validated.artifact(REMOTE_SKILLS_ZIP).unwrap().size, 280);
+    assert_eq!(
+        validated.artifact(REMOTE_DB_SQL).unwrap().size,
+        include_bytes!("fixtures/cc-switch-v2/db.sql").len() as u64
+    );
+    assert_eq!(
+        validated.artifact(REMOTE_SKILLS_ZIP).unwrap().size,
+        include_bytes!("fixtures/cc-switch-v2/skills.zip").len() as u64
+    );
     assert_eq!(validated.layout(), RemoteLayout::Current);
 }
 
@@ -47,6 +54,46 @@ fn committed_fixture_artifacts_match_the_manifest() {
             .expect("skills metadata"),
     )
     .expect("skills fixture integrity");
+}
+
+#[test]
+fn committed_fixture_covers_exclusive_additive_mcp_and_skill_states() {
+    let connection = Connection::open_in_memory().expect("fixture database");
+    connection
+        .execute_batch(include_str!("fixtures/cc-switch-v2/db.sql"))
+        .expect("fixture SQL");
+
+    let provider_apps = connection
+        .prepare("SELECT app_type FROM providers ORDER BY app_type")
+        .expect("provider query")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("provider rows")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("provider values");
+    assert_eq!(provider_apps, ["codex", "opencode"]);
+
+    let enabled_mcp: (i64, i64) = connection
+        .query_row(
+            "SELECT enabled_codex, enabled_opencode FROM mcp_servers WHERE id = 'fixture-mcp'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("fixture MCP");
+    assert_eq!(enabled_mcp, (1, 1));
+
+    let skill_states = connection
+        .prepare("SELECT id, enabled_codex FROM skills ORDER BY id")
+        .expect("Skills query")
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .expect("Skill rows")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("Skill values");
+    assert_eq!(
+        skill_states,
+        [("demo".to_string(), 1), ("disabled-demo".to_string(), 0)]
+    );
 }
 
 #[test]

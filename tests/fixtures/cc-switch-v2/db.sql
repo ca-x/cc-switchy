@@ -59,8 +59,24 @@ CREATE TABLE proxy_live_backup (app_type TEXT PRIMARY KEY, original_config TEXT 
 CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, PRIMARY KEY (date, app_type, provider_id, model));
 CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL, is_healthy INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (provider_id, app_type));
 INSERT INTO providers (id, app_type, name, settings_config, created_at, sort_index, meta, is_current)
-VALUES ('remote-provider', 'codex', 'Remote Provider', '{"api_key":"fixture-only"}', 1, 10, '{}', 1);
-INSERT INTO skills (id, name, directory, enabled_codex, installed_at, updated_at)
-VALUES ('demo', 'Demo', 'demo', 1, 1, 1);
+VALUES
+    ('remote-provider', 'codex', 'Remote Provider', '{"api_key":"fixture-only"}', 1, 10, '{}', 1),
+    ('additive-provider', 'opencode', 'Additive Provider', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://fixture.example/v1"}}', 2, 20, '{}', 0);
+INSERT INTO mcp_servers (
+    id, name, server_config, tags,
+    enabled_claude, enabled_codex, enabled_gemini, enabled_opencode, enabled_hermes
+)
+VALUES (
+    'fixture-mcp', 'Fixture MCP',
+    '{"type":"stdio","command":"fixture-mcp","args":["--stdio"]}',
+    '["fixture"]', 0, 1, 0, 1, 0
+);
+INSERT INTO skills (
+    id, name, directory, enabled_claude, enabled_codex, enabled_gemini,
+    enabled_opencode, enabled_hermes, installed_at, updated_at
+)
+VALUES
+    ('demo', 'Demo', 'demo', 0, 1, 0, 1, 0, 1, 1),
+    ('disabled-demo', 'Disabled Demo', 'disabled-demo', 0, 0, 0, 0, 0, 1, 1);
 COMMIT;
 PRAGMA foreign_keys=ON;

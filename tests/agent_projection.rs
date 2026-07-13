@@ -7,8 +7,10 @@ use cc_switchy::agent::{
 use cc_switchy::progress::NoopProgress;
 use cc_switchy::AppError;
 use rusqlite::Connection;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
+
+static SYMLINK_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn seeded_database(home: &TempDir) -> std::path::PathBuf {
     let path = home.path().join("cc-switch.db");
@@ -19,6 +21,8 @@ fn seeded_database(home: &TempDir) -> std::path::PathBuf {
     connection
         .execute_batch(
             "DELETE FROM providers;
+             DELETE FROM mcp_servers;
+             DELETE FROM skills;
              INSERT INTO providers (id, app_type, name, settings_config, created_at, sort_index, meta, is_current)
              VALUES
                ('fallback', 'codex', 'Fallback', '{\"api_key\":\"fallback\"}', 2, NULL, '{\"unknownFutureField\":{\"keep\":true}}', 1),
@@ -26,6 +30,8 @@ fn seeded_database(home: &TempDir) -> std::path::PathBuf {
                ('claude-main', 'claude', 'Claude Main', '{}', 1, 1, '{}', 1);
              INSERT INTO mcp_servers (id, name, server_config, tags, enabled_claude, enabled_codex)
              VALUES ('docs', 'Docs', '{\"command\":\"mcp-docs\",\"args\":[]}', '[\"docs\"]', 1, 0);
+             INSERT INTO skills (id, name, directory, enabled_codex, installed_at, updated_at)
+             VALUES ('demo', 'Demo', 'demo', 1, 1, 1);
              INSERT OR REPLACE INTO settings (key, value) VALUES ('fixtureSetting', 'fixture-value');",
         )
         .expect("seed rows");
@@ -738,6 +744,7 @@ fn skills_copy_reconciles_managed_targets_and_preserves_unrelated_directories() 
 
 #[test]
 fn skills_auto_falls_back_to_copy_when_symlink_creation_fails() {
+    let _environment_guard = SYMLINK_ENV_LOCK.lock().expect("symlink environment lock");
     let home = TempDir::new().expect("home");
     let db_path = skills_database(&home);
     let ssot = home.path().join(".cc-switch/skills/good");
@@ -769,6 +776,7 @@ fn skills_auto_falls_back_to_copy_when_symlink_creation_fails() {
 #[cfg(unix)]
 #[test]
 fn skills_symlink_mode_links_only_to_a_valid_ssot_source() {
+    let _environment_guard = SYMLINK_ENV_LOCK.lock().expect("symlink environment lock");
     let home = TempDir::new().expect("home");
     let db_path = skills_database(&home);
     let ssot = home.path().join(".cc-switch/skills/good");

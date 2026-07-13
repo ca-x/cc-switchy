@@ -1,7 +1,7 @@
 # cc-switchy Design
 
 **Date:** 2026-07-13  
-**Status:** Implemented; first-release verification pending
+**Status:** Release candidate verified locally; GitHub release pending
 **Reference implementation:** `/home/czyt/code/others/cc-switch`
 
 ## 1. Product Definition

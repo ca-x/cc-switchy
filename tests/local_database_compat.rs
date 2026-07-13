@@ -10,11 +10,12 @@ use cc_switchy::progress::NoopProgress;
 use tempfile::TempDir;
 
 #[test]
-#[ignore = "requires CC_SWITCHY_REAL_DB and is run manually against a private local database copy"]
 fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
-    let source = PathBuf::from(
-        std::env::var_os("CC_SWITCHY_REAL_DB").expect("CC_SWITCHY_REAL_DB must be set"),
-    );
+    let Some(source) = std::env::var_os("CC_SWITCHY_REAL_DB") else {
+        eprintln!("CC_SWITCHY_REAL_DB is unset; private compatibility sample not available");
+        return;
+    };
+    let source = PathBuf::from(source);
     let temporary = TempDir::new().expect("temporary home");
     let database = temporary.path().join("cc-switch.db");
     fs::copy(&source, &database).expect("copy real database");

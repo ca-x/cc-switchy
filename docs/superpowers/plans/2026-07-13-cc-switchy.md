@@ -66,7 +66,7 @@
 - Produces: Language::{Auto,ZhCn,EnUs}, MessageKey, Translator::text(MessageKey, &MessageArgs), Cli, RunMode, AppPaths::discover(), AppError.
 - Consumes: none.
 
-- [ ] **Step 1: Add failing CLI and language tests**
+- [x] **Step 1: Add failing CLI and language tests**
 
 Create tests/cli_first_run.rs with tests that launch the binary in an isolated home:
 
@@ -131,7 +131,7 @@ Create tests/cli_first_run.rs with tests that launch the binary in an isolated h
             .stdout(predicate::str::contains("Usage"));
     }
 
-- [ ] **Step 2: Run the tests and confirm the binary is absent**
+- [x] **Step 2: Run the tests and confirm the binary is absent**
 
 Run:
 
@@ -139,7 +139,7 @@ Run:
 
 Expected: FAIL because Cargo.toml and the cc-switchy binary do not exist.
 
-- [ ] **Step 3: Create the minimal crate and pinned toolchain**
+- [x] **Step 3: Create the minimal crate and pinned toolchain**
 
 Create rust-toolchain.toml:
 
@@ -206,7 +206,7 @@ Create AppPaths with a test override:
         pub fn from_home(home: impl AsRef<std::path::Path>) -> Self;
     }
 
-- [ ] **Step 4: Implement typed bilingual messages and CLI routing**
+- [x] **Step 4: Implement typed bilingual messages and CLI routing**
 
 Create Language, Translator, and message keys for first-run guidance, generic failures, help labels, and mode names. Resolution precedence must be CLI override, CC_SWITCHY_LANG, persisted preference when available, LC_ALL/LC_MESSAGES/LANG, then English.
 
@@ -256,7 +256,7 @@ Create Cli and RunMode:
 
 Build Clap's Command through CommandFactory so headings, descriptions, argument help, usage, and validation messages use the selected Translator. The temporary mode handlers may return NoSourceConfigured; do not initialize raw terminal mode yet.
 
-- [ ] **Step 5: Run the focused tests and static checks**
+- [x] **Step 5: Run the focused tests and static checks**
 
 Run:
 
@@ -266,7 +266,7 @@ Run:
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit the bootstrap**
+- [x] **Step 6: Commit the bootstrap**
 
     git add Cargo.toml Cargo.lock rust-toolchain.toml src tests/cli_first_run.rs
     git commit -m "Establish a testable command boundary before adding sync behavior" -m "Constraint: Rust 1.95 and bilingual first-run guidance are part of the public contract." -m "Confidence: high" -m "Scope-risk: narrow" -m "Tested: cargo test --test cli_first_run; cargo fmt; cargo clippy"
@@ -286,7 +286,7 @@ Expected: all pass.
 - Consumes: AppPaths, Language, AppError.
 - Produces: AppConfig, SourceConfig, WebDavConfig, S3Config, ConfigStore, SourceCatalog.
 
-- [ ] **Step 1: Write failing configuration round-trip and CRUD tests**
+- [x] **Step 1: Write failing configuration round-trip and CRUD tests**
 
 Create tests/config_catalog.rs covering unique source names, one default, add/edit/delete/test-independent CRUD, backup creation, Unix 0600 mode, and language persistence. The core fixture is:
 
@@ -344,7 +344,7 @@ Create tests/config_catalog.rs covering unique source names, one default, add/ed
         assert_eq!(catalog.config().default_source.as_deref(), Some("b"));
     }
 
-- [ ] **Step 2: Run the tests and confirm missing config types**
+- [x] **Step 2: Run the tests and confirm missing config types**
 
 Run:
 
@@ -352,7 +352,7 @@ Run:
 
 Expected: FAIL because src/config does not exist.
 
-- [ ] **Step 3: Implement the versioned data model**
+- [x] **Step 3: Implement the versioned data model**
 
 Use this exact public model:
 
@@ -389,7 +389,7 @@ If TOML serialization of the internally tagged enum does not produce the approve
 
 Credential-bearing configuration types must not derive Debug. Provide a RedactedSource view for diagnostics and TUI rendering.
 
-- [ ] **Step 4: Implement atomic storage**
+- [x] **Step 4: Implement atomic storage**
 
 ConfigStore must expose:
 
@@ -404,7 +404,7 @@ ConfigStore must expose:
 
 save() must validate before writing, create the parent directory, copy the existing file to config.toml.bak, write a sibling temporary file, fsync it, set mode 0600 on Unix, then atomically rename it over config.toml.
 
-- [ ] **Step 5: Implement SourceCatalog mutations**
+- [x] **Step 5: Implement SourceCatalog mutations**
 
 SourceCatalog must persist only after a complete validation succeeds:
 
@@ -421,7 +421,7 @@ SourceCatalog must persist only after a complete validation succeeds:
 
 Normalize whitespace, reject blank or duplicate names, validate HTTP(S) WebDAV URLs, require S3 bucket/region/access key/secret, and default remote_root/profile after trimming.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 Run:
 
@@ -453,7 +453,7 @@ Commit:
 - Consumes: SourceConfig, Translator message keys.
 - Produces: ProgressEvent, ProgressSink, SyncManifest, ArtifactMeta, RemoteLayout, ValidatedManifest.
 
-- [ ] **Step 1: Add failing manifest and progress tests**
+- [x] **Step 1: Add failing manifest and progress tests**
 
 The tests must parse a committed manifest with format cc-switch-webdav-sync, version 2, dbCompatVersion 6, db.sql and skills.zip metadata. Add cases for wrong format, wrong protocol, current db version mismatch, legacy WebDAV db-v5 fallback, missing artifacts, 1 MiB manifest limit, and 512 MiB artifact limit.
 
@@ -471,7 +471,7 @@ Use these assertions:
 
 Also assert that Downloading events carry downloaded and total byte counts and never carry source credentials.
 
-- [ ] **Step 2: Run the focused tests**
+- [x] **Step 2: Run the focused tests**
 
 Run:
 
@@ -479,7 +479,7 @@ Run:
 
 Expected: FAIL because the protocol and progress modules do not exist.
 
-- [ ] **Step 3: Implement the event contract**
+- [x] **Step 3: Implement the event contract**
 
 Use:
 
@@ -509,7 +509,7 @@ Use:
 
 Provide NoopProgress and ChannelProgress implementations. Ensure secrets are not fields in any event variant.
 
-- [ ] **Step 4: Implement protocol parsing and integrity checks**
+- [x] **Step 4: Implement protocol parsing and integrity checks**
 
 Port the constants and algorithms from reference sync_protocol.rs:
 
@@ -527,7 +527,7 @@ Add sha2 = "0.10" and hex = "0.4" in this task.
 
 Implement parse(), validate(), artifact(), verify_artifact(), and sha256_hex(). snapshotId validation must sort artifact names, concatenate name:sha256 with |, hash the bytes, and compare to manifest.snapshot_id.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 
@@ -554,7 +554,7 @@ Commit:
 - Consumes: WebDavConfig, SourceConfig, ProgressSink, ValidatedManifest.
 - Produces: WebDavClient::test_connection(), WebDavClient::fetch_snapshot().
 
-- [ ] **Step 1: Add failing mock WebDAV tests**
+- [x] **Step 1: Add failing mock WebDAV tests**
 
 Use httpmock with routes for the current manifest, legacy manifest, db.sql, and skills.zip. Assert:
 
@@ -575,7 +575,7 @@ The success test should call:
     assert_eq!(snapshot.manifest.snapshot_id, expected_snapshot_id);
     assert_eq!(std::fs::read(snapshot.db_sql_path)?, expected_db);
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
 Run:
 
@@ -583,7 +583,7 @@ Run:
 
 Expected: FAIL because WebDavClient and Reqwest are absent.
 
-- [ ] **Step 3: Add MUSL-safe HTTP dependencies**
+- [x] **Step 3: Add MUSL-safe HTTP dependencies**
 
 Add:
 
@@ -594,7 +594,7 @@ Add:
 
 Add httpmock as a dev-dependency. Verify cargo tree -i native-tls returns no packages.
 
-- [ ] **Step 4: Implement safe URL construction and read-only requests**
+- [x] **Step 4: Implement safe URL construction and read-only requests**
 
 WebDavClient must expose:
 
@@ -616,7 +616,7 @@ Join path segments through url::Url path_segments_mut(), never string concatenat
 
 Retry only connection errors, 429, and 5xx. Redact userinfo and query values from every URL stored in errors.
 
-- [ ] **Step 5: Verify read-only behavior and commit**
+- [x] **Step 5: Verify read-only behavior and commit**
 
 Run:
 
@@ -645,7 +645,7 @@ Commit:
 - Consumes: S3Config, SourceConfig, ProgressSink, protocol validation.
 - Produces: S3Client::test_connection(), S3Client::fetch_snapshot(), canonical SigV4 request helpers.
 
-- [ ] **Step 1: Add failing SigV4 and mock S3 tests**
+- [x] **Step 1: Add failing SigV4 and mock S3 tests**
 
 Cover:
 
@@ -661,7 +661,7 @@ Cover:
 
 Use a fixed clock in tests so Authorization and x-amz-date are deterministic.
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
 Run:
 
@@ -669,7 +669,7 @@ Run:
 
 Expected: FAIL because S3Client and signing helpers do not exist.
 
-- [ ] **Step 3: Add cryptographic dependencies and credential redaction**
+- [x] **Step 3: Add cryptographic dependencies and credential redaction**
 
 Add:
 
@@ -678,7 +678,7 @@ Add:
 
 Define S3Credentials as a private type without Debug. Implement a redacted source description that exposes only source name, bucket, region, safe endpoint, and a partially masked Access Key ID.
 
-- [ ] **Step 4: Implement SigV4 GET/HEAD signing**
+- [x] **Step 4: Implement SigV4 GET/HEAD signing**
 
 Use:
 
@@ -694,7 +694,7 @@ Use:
 
 Canonicalize method, URI, sorted query, lowercase headers, signed-header names, and payload hash exactly per AWS SigV4. The credential scope is date/region/s3/aws4_request. Sign GET and HEAD only. Stream downloads through the same bounded artifact writer used by WebDAV.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 
@@ -727,7 +727,7 @@ Commit:
 - Consumes: DownloadedSnapshot, AppPaths, ProgressSink.
 - Produces: PreparedSkills, PreparedDatabase, LocalBackup, SyncLockGuard, RestoreOutcome, RestoreService::apply().
 
-- [ ] **Step 1: Add failing restore and rollback tests**
+- [x] **Step 1: Add failing restore and rollback tests**
 
 Create a minimal CC Switch-compatible SQL fixture with the required header, providers table, mcp_servers table, settings table, skills table, and one provider. Create a ZIP containing one SKILL.md.
 
@@ -752,7 +752,7 @@ The primary test calls:
     assert_eq!(std::fs::read_to_string(paths.cc_switch_dir.join("skills/demo/SKILL.md"))?, "# Demo");
     assert!(outcome.backup_dir.join("metadata.json").exists());
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
 Run:
 
@@ -760,7 +760,7 @@ Run:
 
 Expected: FAIL because restore modules are absent.
 
-- [ ] **Step 3: Add static-link-safe archive and SQLite dependencies**
+- [x] **Step 3: Add static-link-safe archive and SQLite dependencies**
 
 Add:
 
@@ -771,7 +771,7 @@ Add:
 
 Use zip only for Stored and Deflated entries. Do not enable bzip2, zstd, xz, or system zlib.
 
-- [ ] **Step 4: Implement safe archive preparation**
+- [x] **Step 4: Implement safe archive preparation**
 
 Implement:
 
@@ -785,7 +785,7 @@ Implement:
 
 For every entry, use enclosed_name(), reject unsafe paths and link escapes, enforce count/size before writing, create only parents beneath the extraction root, and fsync completed files needed for the subsequent rename/copy.
 
-- [ ] **Step 5: Implement temporary database validation and local-table preservation**
+- [x] **Step 5: Implement temporary database validation and local-table preservation**
 
 Implement:
 
@@ -809,7 +809,7 @@ Do not copy provider_health.
 
 Port the schema creation and migrations needed to accept the current db-v6 and WebDAV legacy db-v5 exports into restore/schema.rs. Run migrations only on the prepared temporary database, then validate the current required columns and indexes before live replacement.
 
-- [ ] **Step 6: Implement durable backup and rollback**
+- [x] **Step 6: Implement durable backup and rollback**
 
 LocalBackup::create() must copy the existing database if present, recursively copy the current Skills SSOT without following links outside the root, and write metadata.json containing timestamp, source, snapshot ID, and original paths. RestoreService::apply() must:
 
@@ -833,7 +833,7 @@ Define SyncLockGuard in this task:
 
 Its file handle holds an fs2 exclusive lock until Drop.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 Run:
 
@@ -863,7 +863,7 @@ Commit:
 - Consumes: AppPaths and the restored cc-switch.db.
 - Produces: Agent, Provider, ProviderMeta, McpServer, InstalledSkill, DeviceSettings, AgentRepository, ProjectionReport.
 
-- [ ] **Step 1: Add failing repository and device-setting tests**
+- [x] **Step 1: Add failing repository and device-setting tests**
 
 Seed a temporary database with providers, mcp_servers, skills, settings, and two providers per exclusive Agent. Assert:
 
@@ -874,7 +874,7 @@ Seed a temporary database with providers, mcp_servers, skills, settings, and two
 
 Add settings fixtures for a valid local current provider, a stale local current provider, custom Agent config directories, skillStorageLocation, and skillSyncMethod. Assert valid local selection wins and stale selection falls back to the database.
 
-- [ ] **Step 2: Run the focused test**
+- [x] **Step 2: Run the focused test**
 
 Run:
 
@@ -882,7 +882,7 @@ Run:
 
 Expected: FAIL because the Agent domain does not exist.
 
-- [ ] **Step 3: Implement the domain types**
+- [x] **Step 3: Implement the domain types**
 
 Use:
 
@@ -931,7 +931,7 @@ Use:
 
 ProviderMeta must deserialize unknown fields without failure and expose commonConfigEnabled and liveConfigManaged helpers.
 
-- [ ] **Step 4: Implement read-only database queries**
+- [x] **Step 4: Implement read-only database queries**
 
 AgentRepository opens the restored SQLite database and exposes:
 
@@ -949,7 +949,7 @@ Provider ordering must be:
 
 Use parameterized SQL exclusively.
 
-- [ ] **Step 5: Implement device-local settings and paths**
+- [x] **Step 5: Implement device-local settings and paths**
 
 DeviceSettings must load ~/.cc-switch/settings.json as a serde_json::Map so unknown keys survive writes. Expose:
 
@@ -962,7 +962,7 @@ DeviceSettings must load ~/.cc-switch/settings.json as a serde_json::Map so unkn
 
 Implement default and override paths from the approved design. Linux Claude Desktop must return Unsupported instead of inventing a path.
 
-- [ ] **Step 6: Implement effective current-provider resolution**
+- [x] **Step 6: Implement effective current-provider resolution**
 
 Use:
 
@@ -974,7 +974,7 @@ Use:
 
 If the local settings ID exists in the restored provider set, return it. If it is stale, clear and atomically persist it, then use the database is_current provider. Do not write is_current during restore projection.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 Run:
 
@@ -1008,7 +1008,7 @@ Commit:
 - Consumes: AgentRepository, DeviceSettings, Agent paths, ProgressSink.
 - Produces: ProviderProjector::project_all(), project_agent(), switch_exclusive().
 
-- [ ] **Step 1: Add failing provider golden tests**
+- [x] **Step 1: Add failing provider golden tests**
 
 Create fixture providers for every Agent, including:
 
@@ -1032,7 +1032,7 @@ Assert:
 8. commonConfigEnabled applies the stored common snippet only to supported providers.
 9. a failed manual exclusive switch restores the original live files, device current ID, database current ID, and any backfilled provider data.
 
-- [ ] **Step 2: Run provider tests**
+- [x] **Step 2: Run provider tests**
 
 Run:
 
@@ -1040,7 +1040,7 @@ Run:
 
 Expected: FAIL because ProviderProjector does not exist.
 
-- [ ] **Step 3: Add format dependencies and shared atomic writer**
+- [x] **Step 3: Add format dependencies and shared atomic writer**
 
 Add:
 
@@ -1050,7 +1050,7 @@ Add:
 
 Create an internal atomic_write(path, bytes) that writes a sibling temporary file, preserves existing Unix permissions when possible, fsyncs, and renames. Create a MultiFileBackup used by Codex and Claude Desktop so either all managed files update or all originals restore.
 
-- [ ] **Step 4: Implement restore-time provider projection**
+- [x] **Step 4: Implement restore-time provider projection**
 
 Use:
 
@@ -1081,17 +1081,17 @@ Adapt the writer semantics from these reference files at commit c6197ae32450cd70
 
 Do not port proxy takeover, hot-switch, usage, failover, session, OMO, or Tauri state.
 
-- [ ] **Step 5: Implement manual exclusive switching separately**
+- [x] **Step 5: Implement manual exclusive switching separately**
 
 switch_exclusive() is used only by the TUI. It must validate the provider, snapshot the affected database rows/settings/live files, backfill the prior live provider only for compatible normal mode, update device-local current provider, update database is_current, write the target live files, and rely on Task 9 to re-project that Agent's MCP. Any failure before completion restores the snapshot so the original provider remains current.
 
 Restore-time project_all() must never call switch_exclusive(), because backfill would contaminate the newly restored database.
 
-- [ ] **Step 6: Preserve upstream attribution**
+- [x] **Step 6: Preserve upstream attribution**
 
 Add file-level comments to substantially adapted modules and stage THIRD_PARTY_NOTICES.md content naming CC Switch, its MIT license, upstream copyright, the pinned reference commit, and the adapted behavior.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 Run:
 
@@ -1118,7 +1118,7 @@ Commit:
 - Consumes: AgentRepository::mcp_servers(), AgentPaths, provider-written live files.
 - Produces: McpProjector::project_all(), project_agent().
 
-- [ ] **Step 1: Add failing MCP preservation tests**
+- [x] **Step 1: Add failing MCP preservation tests**
 
 Seed stdio, HTTP, and SSE MCP servers with per-Agent enabled flags. Seed live files with one unknown user-managed MCP and one known disabled MCP. Assert:
 
@@ -1132,7 +1132,7 @@ Seed stdio, HTTP, and SSE MCP servers with per-Agent enabled flags. Seed live fi
 - unknown live entries are retained;
 - one corrupt Agent config creates a warning while other Agents still apply.
 
-- [ ] **Step 2: Run MCP tests**
+- [x] **Step 2: Run MCP tests**
 
 Run:
 
@@ -1140,7 +1140,7 @@ Run:
 
 Expected: FAIL because McpProjector does not exist.
 
-- [ ] **Step 3: Implement MCP projection adapters**
+- [x] **Step 3: Implement MCP projection adapters**
 
 Use:
 
@@ -1157,11 +1157,11 @@ Use:
 
 Adapt only projection and validation behavior from reference services/mcp.rs and mcp/{claude,codex,gemini,opencode,hermes}.rs. Do not port MCP import, CRUD, discovery, or Tauri commands.
 
-- [ ] **Step 4: Wire manual provider switching to re-project MCP**
+- [x] **Step 4: Wire manual provider switching to re-project MCP**
 
 After ProviderProjector::switch_exclusive() writes the target provider, call McpProjector::project_agent(agent). If MCP fails, keep the provider switch and return a structured warning suitable for TUI Activity.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 Run:
 
@@ -1188,13 +1188,13 @@ Commit:
 - Consumes: installed Skills rows, DeviceSettings Skills SSOT/method, Agent paths.
 - Produces: SkillProjector::project_all(), project_agent().
 
-- [ ] **Step 1: Add failing Skills reconciliation tests**
+- [x] **Step 1: Add failing Skills reconciliation tests**
 
 Create fixtures for enabled and disabled managed Skills, an orphan symlink pointing into the SSOT, an unrelated ordinary directory, Auto/Symlink/Copy methods, forced symlink failure, a Skill missing SKILL.md, and Claude Desktop/OpenClaw capability skips.
 
 Assert disabled and orphaned managed targets are removed, unrelated directories remain, Auto falls back to copy, copy uses temp-then-rename, and one bad Skill creates a warning without preventing other Skills or Agents.
 
-- [ ] **Step 2: Run Skills tests**
+- [x] **Step 2: Run Skills tests**
 
 Run:
 
@@ -1202,7 +1202,7 @@ Run:
 
 Expected: FAIL because SkillProjector does not exist.
 
-- [ ] **Step 3: Implement safe Skills projection**
+- [x] **Step 3: Implement safe Skills projection**
 
 Use:
 
@@ -1220,7 +1220,7 @@ Use:
 
 Port only SyncMethod, SkillStorageLocation, SSOT validation, symlink/copy, orphan cleanup, and sync_to_app semantics from reference services/skill.rs. Never follow a source symlink outside the SSOT. Preserve ordinary unmanaged directories.
 
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 
 Run:
 
@@ -1251,11 +1251,11 @@ Commit:
 - Consumes: SourceCatalog, WebDavClient/S3Client, RestoreService, ProviderProjector, McpProjector, SkillProjector.
 - Produces: SyncService::run(), SyncRequest, SyncOutcome, CLI TTY/non-TTY progress renderer.
 
-- [ ] **Step 1: Add failing end-to-end and exit-code tests**
+- [x] **Step 1: Add failing end-to-end and exit-code tests**
 
 Test default source resolution, explicit --source override without persistence, fresh manifest/artifact fetch on consecutive syncs, global lock rejection before transport, Provider/MCP/Skills event ordering, exit codes 0/1/2, redirected line progress, and Ctrl+C before restore.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run:
 
@@ -1263,11 +1263,11 @@ Run:
 
 Expected: FAIL because SyncService is absent.
 
-- [ ] **Step 3: Acquire the existing global lock at the orchestration boundary**
+- [x] **Step 3: Acquire the existing global lock at the orchestration boundary**
 
 Use SyncLockGuard from Task 6. Acquire it before connecting to any source and hold it through cleanup and projection. RestoreService::apply() receives &SyncLockGuard and must not acquire another lock.
 
-- [ ] **Step 4: Implement the remote-client enum and sync pipeline**
+- [x] **Step 4: Implement the remote-client enum and sync pipeline**
 
 Use:
 
@@ -1297,11 +1297,11 @@ run() must resolve the source, acquire the lock, create unique staging, fetch an
 
 Add tokio-util = { version = "0.7", features = ["rt"] } for CancellationToken.
 
-- [ ] **Step 5: Implement CLI progress and result rendering**
+- [x] **Step 5: Implement CLI progress and result rendering**
 
 TTY rendering uses a compact spinner and byte bars without alternate screen. Redirected stderr renders one line per stage and throttles Downloading lines. Final stdout is bilingual and includes source, snapshot, duration, counts, warnings, and backup path.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 Run:
 
@@ -1336,7 +1336,7 @@ Commit:
 - Consumes: SourceCatalog, SyncService progress channel, AgentRepository, ProviderProjector, McpProjector.
 - Produces: default TUI, Providers/Skills/Activity/Sources views, shared Wizard CRUD, terminal guard.
 
-- [ ] **Step 1: Add failing reducer and TestBackend rendering tests**
+- [x] **Step 1: Add failing reducer and TestBackend rendering tests**
 
 Use Ratatui TestBackend at 140x36, 100x30, 70x24, and 50x15. Assert:
 
@@ -1356,7 +1356,7 @@ Use Ratatui TestBackend at 140x36, 100x30, 70x24, and 50x15. Assert:
 - progress view shows stage, bytes, elapsed time, and log;
 - warning view lists failed Agents and retry action.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run:
 
@@ -1364,7 +1364,7 @@ Run:
 
 Expected: FAIL because TUI modules are absent.
 
-- [ ] **Step 3: Implement pure TUI state and actions**
+- [x] **Step 3: Implement pure TUI state and actions**
 
 Use:
 
@@ -1392,19 +1392,19 @@ App::update(action) must be pure except for queuing commands. Store a cursor and
 
 Persist last view, selected Agent/source, pane, and per-Agent cursors to state.json using atomic mode-0600 writes. Corrupt state.json must fall back to defaults without blocking startup.
 
-- [ ] **Step 4: Implement responsive rendering**
+- [x] **Step 4: Implement responsive rendering**
 
 Render the approved four views and key hints. Use one accent color plus semantic green/yellow/red, but always include glyph/text status. Mask passwords and secrets; partially mask Access Key IDs. The progress view consumes ProgressEvent values and keeps bounded scrollback.
 
-- [ ] **Step 5: Implement the shared Wizard state machine**
+- [x] **Step 5: Implement the shared Wizard state machine**
 
 WizardState supports List, Details, ChooseType, EditWebDav, EditS3, ConfirmDelete, ChooseReplacementDefault, TestConnection, and LanguageSelect. Form passwords are masked. Each confirmed mutation calls SourceCatalog immediately. Esc discards the active form only. q exits standalone Wizard or returns to the TUI.
 
-- [ ] **Step 6: Implement safe terminal lifecycle and background commands**
+- [x] **Step 6: Implement safe terminal lifecycle and background commands**
 
 Create TerminalGuard that enables raw mode, enters alternate screen, hides the cursor, and restores all three in Drop and the panic hook. Run sync/test/switch commands on Tokio tasks and send results/progress to the event loop. During local replacement cancellation is deferred; before that boundary Esc/Ctrl+C cancels and cleans staging.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 Run:
 
@@ -1430,7 +1430,7 @@ Commit:
 - Consumes: final CLI behavior and supported target list.
 - Produces: bilingual usage documentation, snapshot security warning, verified command examples.
 
-- [ ] **Step 1: Add a documentation command smoke test**
+- [x] **Step 1: Add a documentation command smoke test**
 
 Create tests/readme_commands.rs that asserts README contains and the binary accepts:
 
@@ -1443,15 +1443,15 @@ Create tests/readme_commands.rs that asserts README contains and the binary acce
 
 Also assert README names WebDAV, S3, db.sql secret exposure, exit codes 0/1/2, ~/.cc-switchy, ~/.cc-switch, and the six release targets.
 
-- [ ] **Step 2: Write bilingual README sections**
+- [x] **Step 2: Write bilingual README sections**
 
 Include installation, first run, Wizard keys, TUI keys, source TOML example, sync semantics, backup/rollback, language selection, Agent capability matrix, exit codes, private CA limitation for webpki roots, GNU glibc baseline guidance, MUSL recommendation, and snapshot-secret warning.
 
-- [ ] **Step 3: Complete attribution**
+- [x] **Step 3: Complete attribution**
 
 THIRD_PARTY_NOTICES.md must reproduce the upstream MIT notice and identify pinned reference commit c6197ae32450cd70e2bf03b35e3f5f53ac12044c. List protocol, database restore, provider projection, MCP projection, and Skills behavior as adapted areas.
 
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 
 Run:
 
@@ -1474,7 +1474,7 @@ Commit:
 - Consumes: Cargo.lock, Rust 1.95 toolchain, release targets.
 - Produces: required checks and six-target archives with SHA256SUMS.
 
-- [ ] **Step 1: Add CI workflow**
+- [x] **Step 1: Add CI workflow**
 
 ci.yml must contain:
 
@@ -1486,7 +1486,7 @@ ci.yml must contain:
 
 Pin actions/checkout, dtolnay/rust-toolchain, and cross installation to stable explicit versions. Do not create Cross.toml in v1.
 
-- [ ] **Step 2: Add tag release workflow**
+- [x] **Step 2: Add tag release workflow**
 
 release.yml triggers on v* tags with fail-fast false and these targets:
 
@@ -1499,7 +1499,7 @@ release.yml triggers on v* tags with fail-fast false and these targets:
 
 Use cargo for native targets and cross for both MUSL targets. Package Unix targets as tar.gz and Windows as zip. Every archive contains binary, README.md, LICENSE, and THIRD_PARTY_NOTICES.md. A final Ubuntu job downloads all archives, runs sha256sum, writes SHA256SUMS, and publishes with softprops/action-gh-release.
 
-- [ ] **Step 3: Validate workflows locally**
+- [x] **Step 3: Validate workflows locally**
 
 Run:
 
@@ -1517,7 +1517,7 @@ If Docker and cross are available, also run:
 
 Expected: no NEEDED dynamic entries. If local Docker/cross is unavailable, record that exact gap and rely on CI; do not claim local MUSL verification.
 
-- [ ] **Step 4: Commit workflows**
+- [x] **Step 4: Commit workflows**
 
     git add .github/workflows README.md
     git commit -m "Make every supported binary reproducible before publishing" -m "Constraint: Linux MUSL targets require cross because ring and bundled SQLite need target C toolchains." -m "Rejected: Maintain cargo-zigbuild and cross simultaneously | duplicate release paths increase drift." -m "Confidence: high" -m "Scope-risk: moderate" -m "Tested: fmt, clippy, tests, native release build, actionlint; MUSL evidence recorded separately"
@@ -1532,11 +1532,11 @@ Expected: no NEEDED dynamic entries. If local Docker/cross is unavailable, recor
 - Consumes: complete application.
 - Produces: verified first release candidate with no known errors.
 
-- [ ] **Step 1: Generate and pin a reference compatibility fixture**
+- [x] **Step 1: Generate and pin a reference compatibility fixture**
 
 Using the pinned CC Switch checkout, generate or verify manifest.json, db.sql, and skills.zip for the committed fixture. Record upstream commit, SHA-256 values, and generation command in tests/fixtures/cc-switch-v2/README.md. The fixture must include providers, MCP, enabled/disabled Skills, and additive/exclusive Agents.
 
-- [ ] **Step 2: Run the full automated verification suite**
+- [x] **Step 2: Run the full automated verification suite**
 
 Run sequentially:
 
@@ -1551,7 +1551,7 @@ Run sequentially:
 
 Expected: all pass with zero ignored compatibility tests.
 
-- [ ] **Step 3: Run manual isolated-home smoke tests**
+- [x] **Step 3: Run manual isolated-home smoke tests**
 
 With a temporary directory exported as both CC_SWITCHY_TEST_HOME and CC_SWITCH_TEST_HOME:
 
@@ -1562,7 +1562,7 @@ With a temporary directory exported as both CC_SWITCHY_TEST_HOME and CC_SWITCH_T
 5. Force one Agent permission failure and confirm restore succeeds with exit code 2.
 6. Tamper with db.sql and skills.zip and confirm local state remains byte-for-byte unchanged.
 
-- [ ] **Step 4: Inspect dependency and secret surfaces**
+- [x] **Step 4: Inspect dependency and secret surfaces**
 
 Run:
 
@@ -1572,11 +1572,11 @@ Run:
 
 Review every match so secret fields are private/redacted and test values synthetic. Confirm native-tls is absent.
 
-- [ ] **Step 5: Review the diff against the approved design**
+- [x] **Step 5: Review the diff against the approved design**
 
 Check every acceptance criterion in docs/superpowers/specs/2026-07-13-cc-switchy-design.md against a passing test or manual evidence. Confirm no upload remote methods, proxy runtime, scheduler, provider CRUD, or other non-goal entered implementation.
 
-- [ ] **Step 6: Commit final verification fixes**
+- [x] **Step 6: Commit final verification fixes**
 
 After fixing any failures:
 
