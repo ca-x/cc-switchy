@@ -60,6 +60,24 @@ pub enum AppError {
         expected: String,
         actual: String,
     },
+    #[error("WebDAV {operation} failed ({reason}): {url}")]
+    WebDavTransport {
+        operation: &'static str,
+        url: String,
+        reason: &'static str,
+    },
+    #[error("WebDAV {operation} failed with HTTP {status}: {url}")]
+    WebDavHttp {
+        operation: &'static str,
+        status: u16,
+        url: String,
+    },
+    #[error("source {source_name} has no downloadable snapshot")]
+    RemoteEmpty { source_name: String },
+    #[error("remote artifact is missing: {artifact}")]
+    RemoteArtifactMissing { artifact: String },
+    #[error("response for {target} exceeds the {max} byte limit: {size} bytes")]
+    ResponseTooLarge { target: String, size: u64, max: u64 },
 }
 
 impl AppError {
