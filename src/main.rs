@@ -38,6 +38,7 @@ fn main() -> ExitCode {
                     translator.text(MessageKey::HomeDirectoryUnavailable, &args)
                 }
                 AppError::NoSourceConfigured => unreachable!("handled above"),
+                other => other.to_string(),
             };
             eprintln!(
                 "{}: {detail}",

@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Language {
     #[serde(rename = "auto")]
+    #[default]
     Auto,
     #[serde(rename = "zh-CN")]
     ZhCn,
