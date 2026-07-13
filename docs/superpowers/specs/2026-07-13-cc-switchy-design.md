@@ -408,6 +408,11 @@ Additive Agents write every provider whose metadata does not opt out of managed
 live configuration. The TUI presents these as applied sets, not radio-button
 choices.
 
+Claude Desktop official and direct providers are supported on macOS and
+Windows. Claude Desktop proxy-mode providers depend on the CC Switch proxy
+runtime, which is outside v1 scope; they produce a per-Agent projection warning
+and exit code 2 while other Agents continue.
+
 Provider lists use CC Switch ordering:
 
 ```sql
