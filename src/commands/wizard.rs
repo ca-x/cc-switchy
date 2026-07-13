@@ -47,7 +47,7 @@ pub async fn run_embedded(
             if let Event::Key(key) =
                 event::read().map_err(|error| AppError::io("terminal", error))?
             {
-                if let Some(action) = wizard::action_for_key(key) {
+                if let Some(action) = wizard::action_for_key(&state, key) {
                     state.update(action);
                     dirty = true;
                 }

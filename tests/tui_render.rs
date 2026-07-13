@@ -7,9 +7,10 @@ use cc_switchy::config::{
 };
 use cc_switchy::progress::ProgressEvent;
 use cc_switchy::tui::keymap;
+use cc_switchy::tui::wizard;
 use cc_switchy::tui::{
     render, App, CursorState, FocusPane, MainView, PersistedUiState, TuiCommand, ViewProvider,
-    ViewSkill, ViewSource, WizardAction, WizardCommand, WizardState,
+    ViewSkill, ViewSource, WizardAction, WizardCommand, WizardMode, WizardState,
 };
 use cc_switchy::{Language, MessageKey};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -154,6 +155,56 @@ fn key(code: KeyCode) -> KeyEvent {
 
 fn drain(app: &mut App) {
     while app.pop_command().is_some() {}
+}
+
+#[test]
+fn wizard_form_treats_command_letters_as_text() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+
+    for character in "qjkaextmwsL".chars() {
+        let action = wizard::action_for_key(&state, key(KeyCode::Char(character)))
+            .expect("form input action");
+        state.update(action);
+    }
+
+    assert_eq!(state.form_values()[0], "qjkaextmwsL");
+    assert_eq!(state.mode, WizardMode::EditWebDav);
+    assert!(state.pop_command().is_none());
+}
+
+#[test]
+fn wizard_exit_and_back_keys_follow_mode() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+
+    let q = wizard::action_for_key(&state, key(KeyCode::Char('q'))).expect("q input");
+    state.update(q);
+    assert_eq!(state.form_values()[0], "q");
+
+    let escape = wizard::action_for_key(&state, key(KeyCode::Esc)).expect("escape");
+    state.update(escape);
+    assert_eq!(state.mode, WizardMode::List);
+
+    state.update(WizardAction::Add);
+    let quit = wizard::action_for_key(&state, key(KeyCode::Char('q'))).expect("quit");
+    state.update(quit);
+    assert!(matches!(state.pop_command(), Some(WizardCommand::Exit)));
+}
+
+#[test]
+fn control_c_exits_from_a_wizard_form() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+    let control_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+
+    let action = wizard::action_for_key(&state, control_c).expect("Ctrl+C");
+    state.update(action);
+
+    assert!(matches!(state.pop_command(), Some(WizardCommand::Exit)));
 }
 
 #[test]

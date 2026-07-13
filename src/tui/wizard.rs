@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -122,10 +122,14 @@ impl WizardState {
     }
 
     pub fn update(&mut self, action: WizardAction) {
+        if action == WizardAction::Quit {
+            self.commands.push_back(WizardCommand::Exit);
+            return;
+        }
         match self.mode {
             WizardMode::List => self.update_list(action),
             WizardMode::Details | WizardMode::TestConnection => match action {
-                WizardAction::Cancel | WizardAction::Quit | WizardAction::Confirm => {
+                WizardAction::Cancel | WizardAction::Confirm => {
                     self.mode = WizardMode::List;
                 }
                 _ => {}
@@ -188,7 +192,6 @@ impl WizardState {
                 self.language_cursor = language_index(self.language);
                 self.mode = WizardMode::LanguageSelect;
             }
-            WizardAction::Quit => self.commands.push_back(WizardCommand::Exit),
             _ => {}
         }
     }
@@ -207,7 +210,7 @@ impl WizardState {
                 self.begin_new_form();
             }
             WizardAction::Confirm => self.begin_new_form(),
-            WizardAction::Cancel | WizardAction::Quit => self.mode = WizardMode::List,
+            WizardAction::Cancel => self.mode = WizardMode::List,
             _ => {}
         }
     }
@@ -239,7 +242,7 @@ impl WizardState {
                     );
                 }
             }
-            WizardAction::Cancel | WizardAction::Quit => {
+            WizardAction::Cancel => {
                 self.fields.clear();
                 self.edit_original = None;
                 self.mode = WizardMode::List;
@@ -268,7 +271,7 @@ impl WizardState {
                     self.mode = WizardMode::List;
                 }
             }
-            WizardAction::Cancel | WizardAction::Quit => self.mode = WizardMode::List,
+            WizardAction::Cancel => self.mode = WizardMode::List,
             _ => {}
         }
     }
@@ -292,7 +295,7 @@ impl WizardState {
                     self.mode = WizardMode::List;
                 }
             }
-            WizardAction::Cancel | WizardAction::Quit => self.mode = WizardMode::List,
+            WizardAction::Cancel => self.mode = WizardMode::List,
             _ => {}
         }
     }
@@ -309,7 +312,7 @@ impl WizardState {
                     .push_back(WizardCommand::ChangeLanguage(self.language));
                 self.mode = WizardMode::List;
             }
-            WizardAction::Cancel | WizardAction::Quit => self.mode = WizardMode::List,
+            WizardAction::Cancel => self.mode = WizardMode::List,
             _ => {}
         }
     }
@@ -396,16 +399,27 @@ impl WizardState {
     }
 }
 
-pub fn action_for_key(key: KeyEvent) -> Option<WizardAction> {
+pub fn action_for_key(state: &WizardState, key: KeyEvent) -> Option<WizardAction> {
+    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        return Some(WizardAction::Quit);
+    }
+    if matches!(state.mode, WizardMode::EditWebDav | WizardMode::EditS3) {
+        return match key.code {
+            KeyCode::Esc => Some(WizardAction::Cancel),
+            KeyCode::Enter => Some(WizardAction::Confirm),
+            KeyCode::Tab => Some(WizardAction::NextField),
+            KeyCode::BackTab => Some(WizardAction::PreviousField),
+            KeyCode::Backspace => Some(WizardAction::Backspace),
+            KeyCode::Char(character) => Some(WizardAction::Input(character)),
+            _ => None,
+        };
+    }
     match key.code {
         KeyCode::Char('q') => Some(WizardAction::Quit),
         KeyCode::Esc => Some(WizardAction::Cancel),
         KeyCode::Up | KeyCode::Char('k') => Some(WizardAction::Move(-1)),
         KeyCode::Down | KeyCode::Char('j') => Some(WizardAction::Move(1)),
         KeyCode::Enter => Some(WizardAction::Confirm),
-        KeyCode::Tab => Some(WizardAction::NextField),
-        KeyCode::BackTab => Some(WizardAction::PreviousField),
-        KeyCode::Backspace => Some(WizardAction::Backspace),
         KeyCode::Char('a') => Some(WizardAction::Add),
         KeyCode::Char('e') => Some(WizardAction::Edit),
         KeyCode::Char('x') => Some(WizardAction::Delete),
@@ -414,7 +428,6 @@ pub fn action_for_key(key: KeyEvent) -> Option<WizardAction> {
         KeyCode::Char('L') => Some(WizardAction::Language),
         KeyCode::Char('w') => Some(WizardAction::ChooseWebDav),
         KeyCode::Char('s') => Some(WizardAction::ChooseS3),
-        KeyCode::Char(character) => Some(WizardAction::Input(character)),
         _ => None,
     }
 }
