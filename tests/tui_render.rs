@@ -149,6 +149,31 @@ fn draw_wizard(state: &WizardState, width: u16, height: u16) -> String {
         .join("\n")
 }
 
+fn draw_wizard_with_cursor(
+    state: &WizardState,
+    width: u16,
+    height: u16,
+) -> (String, bool, ratatui::layout::Position) {
+    let backend = TestBackend::new(width, height);
+    let mut terminal = Terminal::new(backend).expect("terminal");
+    terminal
+        .draw(|frame| cc_switchy::tui::wizard::render(frame, state))
+        .expect("draw wizard");
+    let text = (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (
+        text,
+        terminal.backend().cursor_visible(),
+        terminal.backend().cursor_position(),
+    )
+}
+
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }
@@ -267,6 +292,107 @@ fn wizard_clears_form_only_after_catalog_mutation_succeeds() {
     assert_eq!(state.mode, WizardMode::List);
     assert!(state.form_values().is_empty());
     assert_eq!(state.status.as_deref(), Some("✓ Saved"));
+}
+
+#[test]
+fn wizard_empty_field_has_a_visible_marker_and_cursor() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+
+    let (rendered, cursor_visible, cursor) = draw_wizard_with_cursor(&state, 100, 30);
+
+    assert!(rendered.contains("› Name"));
+    assert!(cursor_visible);
+    assert!(cursor.x > 14);
+    assert_eq!(cursor.y, 4);
+}
+
+#[test]
+fn wizard_footer_matches_the_current_mode() {
+    let list = WizardState::new(Language::EnUs, Vec::new(), None);
+    assert!(draw_wizard(&list, 100, 30).contains("a add"));
+
+    let mut form = WizardState::new(Language::ZhCn, Vec::new(), None);
+    form.update(WizardAction::Add);
+    form.update(WizardAction::Confirm);
+    let rendered = draw_wizard(&form, 100, 30);
+    let compact = rendered.replace(' ', "");
+    assert!(compact.contains("输入"));
+    assert!(!compact.contains("a添加"));
+}
+
+#[test]
+fn responsive_views_always_render_the_focused_pane() {
+    let mut app = app(Language::EnUs, true);
+    app.focus = FocusPane::Details;
+    let providers = draw(&app, 100, 30);
+    assert!(providers.contains("› Details"));
+
+    app.view = MainView::Skills;
+    app.focus = FocusPane::Agents;
+    let agents = draw(&app, 70, 24);
+    assert!(agents.contains("› Agents"));
+
+    app.focus = FocusPane::List;
+    let skills = draw(&app, 70, 24);
+    assert!(skills.contains("› Skills"));
+}
+
+#[test]
+fn wizard_form_error_remains_visible_with_contextual_help() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+    state.mutation_failed("source already exists".to_string());
+
+    let rendered = draw_wizard(&state, 70, 24);
+
+    assert!(rendered.contains("source already exists"));
+    assert!(rendered.contains("Ctrl+C exit"));
+}
+
+#[test]
+fn wizard_secret_field_stays_masked_while_showing_the_cursor() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+    for _ in 0..3 {
+        state.update(WizardAction::NextField);
+    }
+    for character in "qsecret".chars() {
+        state.update(WizardAction::Input(character));
+    }
+
+    let (rendered, cursor_visible, _) = draw_wizard_with_cursor(&state, 100, 30);
+
+    assert!(!rendered.contains("qsecret"));
+    assert!(rendered.contains("••••••••"));
+    assert!(cursor_visible);
+}
+
+#[test]
+fn main_footer_only_advertises_actions_for_the_current_view() {
+    let mut app = app(Language::EnUs, true);
+    let providers = draw(&app, 100, 30);
+    assert!(providers.contains("Enter apply"));
+
+    app.view = MainView::Skills;
+    let skills = draw(&app, 100, 30);
+    assert!(!skills.contains("Enter apply"));
+    assert!(skills.contains("q quit"));
+
+    app.view = MainView::Sources;
+    let sources = draw(&app, 100, 30);
+    assert!(sources.contains("t test"));
+    assert!(sources.contains("m default"));
+
+    app.view = MainView::Activity;
+    let activity = draw(&app, 100, 30);
+    assert!(!activity.contains("r retry"));
+    app.progress.retry_available = true;
+    let retry = draw(&app, 100, 30);
+    assert!(retry.contains("r retry"));
 }
 
 #[test]

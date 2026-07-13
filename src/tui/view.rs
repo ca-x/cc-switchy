@@ -87,7 +87,11 @@ fn render_providers(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .constraints([Constraint::Length(24), Constraint::Min(40)])
             .split(area);
         render_agents(frame, app, columns[0]);
-        render_provider_list(frame, app, columns[1]);
+        if app.focus == FocusPane::Details {
+            render_provider_details(frame, app, columns[1]);
+        } else {
+            render_provider_list(frame, app, columns[1]);
+        }
     } else {
         match app.focus {
             FocusPane::Agents => render_agents(frame, app, area),
@@ -228,21 +232,21 @@ fn render_provider_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_skills(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let columns = if area.width >= 80 {
-        Layout::default()
+    if area.width >= 80 {
+        let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(24), Constraint::Min(30)])
-            .split(area)
-    } else {
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1)])
-            .split(area)
-    };
-    if columns.len() > 1 {
+            .split(area);
         render_agents(frame, app, columns[0]);
+        render_skill_list(frame, app, columns[1]);
+    } else if app.focus == FocusPane::Agents {
+        render_agents(frame, app, area);
+    } else {
+        render_skill_list(frame, app, area);
     }
-    let target = *columns.last().expect("Skills layout");
+}
+
+fn render_skill_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let skills = app
         .skills
         .get(&app.selected_agent())
@@ -264,7 +268,7 @@ fn render_skills(frame: &mut Frame<'_>, app: &App, area: Rect) {
             &Translator::new(app.language).text(MessageKey::TuiSkills, &MessageArgs::default()),
             app.focus == FocusPane::List,
         )),
-        target,
+        area,
     );
 }
 
@@ -437,6 +441,17 @@ fn render_source_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
+    let footer_key = match app.view {
+        MainView::Providers => MessageKey::TuiFooterProviders,
+        MainView::Skills => MessageKey::TuiFooterSkills,
+        MainView::Activity => MessageKey::TuiFooterActivity,
+        MainView::Sources => MessageKey::TuiFooterSources,
+    };
+    let retry = if app.view == MainView::Activity && app.progress.retry_available {
+        format!("  r {}", translator.text(MessageKey::TuiRetry, &args))
+    } else {
+        String::new()
+    };
     let active = if app.progress.active {
         format!("  ◌ {}", translator.text(MessageKey::TuiWorking, &args))
     } else {
@@ -444,8 +459,8 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     };
     frame.render_widget(
         Paragraph::new(format!(
-            " {}{active}",
-            translator.text(MessageKey::TuiFooter, &args)
+            " {}{retry}{active}",
+            translator.text(footer_key, &args)
         ))
         .style(Style::default().fg(MUTED)),
         area,
@@ -464,9 +479,10 @@ fn render_resize(frame: &mut Frame<'_>, language: Language, area: Rect) {
 }
 
 fn pane_block(title: &str, focused: bool) -> Block<'_> {
+    let marker = if focused { "› " } else { "" };
     Block::default()
         .borders(Borders::ALL)
-        .title(format!(" {title} "))
+        .title(format!(" {marker}{title} "))
         .border_style(if focused {
             Style::default().fg(ACCENT)
         } else {

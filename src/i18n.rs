@@ -120,11 +120,17 @@ pub enum MessageKey {
     TuiUnmanaged,
     TuiBytes,
     TuiDefault,
-    TuiFooter,
+    TuiFooterProviders,
+    TuiFooterSkills,
+    TuiFooterActivity,
+    TuiFooterSources,
     TuiWorking,
     WizardResize,
     WizardNoSources,
-    WizardFooter,
+    WizardFooterList,
+    WizardFooterForm,
+    WizardFooterNavigate,
+    WizardFooterBack,
     WizardDetails,
     WizardEditHint,
     WizardSaved,
@@ -315,17 +321,31 @@ impl Translator {
             (Language::ZhCn, MessageKey::TuiUnmanaged) => "未受管",
             (Language::ZhCn, MessageKey::TuiBytes) => "字节",
             (Language::ZhCn, MessageKey::TuiDefault) => "默认",
-            (Language::ZhCn, MessageKey::TuiFooter) => {
+            (Language::ZhCn, MessageKey::TuiFooterProviders) => {
                 "↑↓ 移动  Tab 切换焦点  [ ] 智能体  Enter 应用  s 同步  w 向导  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::TuiFooterSkills) => {
+                "↑↓ 移动  Tab 切换焦点  [ ] 智能体  s 同步  w 向导  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::TuiFooterActivity) => "s 同步  w 向导  L 语言  q 退出",
+            (Language::ZhCn, MessageKey::TuiFooterSources) => {
+                "↑↓ 移动  Tab 切换焦点  s 同步  t 测试  m 默认  w 向导  L 语言  q 退出"
             }
             (Language::ZhCn, MessageKey::TuiWorking) => "正在工作 · 恢复前可按 Esc 取消",
             (Language::ZhCn, MessageKey::WizardResize) => "终端过小，请调整到至少 50×15。",
             (Language::ZhCn, MessageKey::WizardNoSources) => {
                 "还没有同步源 · 按 a 添加 WebDAV 或 S3"
             }
-            (Language::ZhCn, MessageKey::WizardFooter) => {
+            (Language::ZhCn, MessageKey::WizardFooterList) => {
                 "a 添加  e 编辑  Enter 详情/保存  x 删除  t 测试  m 默认  L 语言  q 退出"
             }
+            (Language::ZhCn, MessageKey::WizardFooterForm) => {
+                "Esc 放弃  Ctrl+C 退出  Tab/Shift+Tab 字段  Enter 下一项/保存  直接输入"
+            }
+            (Language::ZhCn, MessageKey::WizardFooterNavigate) => {
+                "↑↓ 选择  Enter 确认  Esc 返回  q 退出"
+            }
+            (Language::ZhCn, MessageKey::WizardFooterBack) => "Enter/Esc 返回  q 退出",
             (Language::ZhCn, MessageKey::WizardDetails) => "详情",
             (Language::ZhCn, MessageKey::WizardEditHint) => {
                 "编辑 · Tab 切换字段 · Enter 下一项/保存 · Esc 放弃"
@@ -579,8 +599,17 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::TuiUnmanaged) => "unmanaged",
             (Language::Auto | Language::EnUs, MessageKey::TuiBytes) => "bytes",
             (Language::Auto | Language::EnUs, MessageKey::TuiDefault) => "DEFAULT",
-            (Language::Auto | Language::EnUs, MessageKey::TuiFooter) => {
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterProviders) => {
                 "↑↓ move  Tab focus  [ ] Agent  Enter apply  s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterSkills) => {
+                "↑↓ move  Tab focus  [ ] Agent  s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterActivity) => {
+                "s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterSources) => {
+                "↑↓ move  Tab focus  s sync  t test  m default  w wizard  L language  q quit"
             }
             (Language::Auto | Language::EnUs, MessageKey::TuiWorking) => {
                 "working · Esc cancels before restore"
@@ -591,8 +620,17 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::WizardNoSources) => {
                 "No sources yet · press a to add WebDAV or S3"
             }
-            (Language::Auto | Language::EnUs, MessageKey::WizardFooter) => {
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterList) => {
                 "a add  e edit  Enter details/save  x delete  t test  m default  L language  q exit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterForm) => {
+                "Esc discard  Ctrl+C exit  Tab/Shift+Tab field  Enter next/save  type to edit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterNavigate) => {
+                "↑↓ choose  Enter confirm  Esc back  q exit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterBack) => {
+                "Enter/Esc back  q exit"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardDetails) => "Details",
             (Language::Auto | Language::EnUs, MessageKey::WizardEditHint) => {

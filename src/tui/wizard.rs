@@ -532,12 +532,26 @@ pub fn render(frame: &mut Frame<'_>, state: &WizardState) {
         }
     }
     let status = state.status.as_deref().unwrap_or("");
+    let footer_key = match state.mode {
+        WizardMode::List => MessageKey::WizardFooterList,
+        WizardMode::EditWebDav | WizardMode::EditS3 => MessageKey::WizardFooterForm,
+        WizardMode::Details | WizardMode::TestConnection => MessageKey::WizardFooterBack,
+        WizardMode::ChooseType
+        | WizardMode::ConfirmDelete
+        | WizardMode::ChooseReplacementDefault
+        | WizardMode::LanguageSelect => MessageKey::WizardFooterNavigate,
+    };
+    let hint = translator.text(footer_key, &MessageArgs::default());
+    let footer = if status.is_empty() {
+        vec![Line::from(format!(" {hint}"))]
+    } else {
+        vec![
+            Line::from(format!(" {status}")),
+            Line::from(format!(" {hint}")),
+        ]
+    };
     frame.render_widget(
-        Paragraph::new(format!(
-            " {}  {status}",
-            translator.text(MessageKey::WizardFooter, &MessageArgs::default())
-        ))
-        .style(Style::default().fg(Color::DarkGray)),
+        Paragraph::new(footer).style(Style::default().fg(Color::DarkGray)),
         rows[2],
     );
 }
@@ -647,29 +661,37 @@ fn render_details(frame: &mut Frame<'_>, state: &WizardState, area: Rect) {
 fn render_form(frame: &mut Frame<'_>, state: &WizardState, area: Rect) {
     let translator = Translator::new(state.language);
     let args = MessageArgs::default();
+    let active_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
     let items = state
         .fields
         .iter()
         .enumerate()
         .map(|(index, field)| {
-            let value = if field.label == MessageKey::FieldAccessKeyId {
-                mask_access_id(&field.value)
-            } else if field.secret {
-                mask(&field.value)
-            } else {
-                field.value.clone()
-            };
+            let active = index == state.field;
+            let value = displayed_form_value(field);
             ListItem::new(Line::from(vec![
                 Span::styled(
+                    if active { "› " } else { "  " },
+                    if active {
+                        active_style
+                    } else {
+                        Style::default()
+                    },
+                ),
+                Span::styled(
                     format!("{:14}", translator.text(field.label, &args)),
-                    Style::default().fg(Color::DarkGray),
+                    if active {
+                        active_style
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    },
                 ),
                 Span::styled(
                     value,
-                    if index == state.field {
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD)
+                    if active {
+                        active_style
                     } else {
                         Style::default()
                     },
@@ -684,6 +706,33 @@ fn render_form(frame: &mut Frame<'_>, state: &WizardState, area: Rect) {
         ))),
         area,
     );
+    let active_field = &state.fields[state.field];
+    let cursor_prefix = format!(
+        "› {:14}{}",
+        translator.text(active_field.label, &args),
+        displayed_form_value(active_field)
+    );
+    let cursor_x = area
+        .x
+        .saturating_add(1)
+        .saturating_add(Line::from(cursor_prefix).width() as u16)
+        .min(area.right().saturating_sub(2));
+    let cursor_y = area
+        .y
+        .saturating_add(1)
+        .saturating_add(state.field as u16)
+        .min(area.bottom().saturating_sub(2));
+    frame.set_cursor_position((cursor_x, cursor_y));
+}
+
+fn displayed_form_value(field: &FormField) -> String {
+    if field.label == MessageKey::FieldAccessKeyId {
+        mask_access_id(&field.value)
+    } else if field.secret {
+        mask(&field.value)
+    } else {
+        field.value.clone()
+    }
 }
 
 fn render_choices(
