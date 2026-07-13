@@ -53,6 +53,8 @@ jobs:
         with:
           toolchain: 1.95.0
           targets: ${{ matrix.target }}
+      - name: Ensure target standard library is installed
+        run: rustup target add ${{ matrix.target }} --toolchain 1.95.0
       - name: Build release binary
         run: cargo build --locked --release --target ${{ matrix.target }}
 
