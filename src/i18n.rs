@@ -130,6 +130,7 @@ pub enum MessageKey {
     WizardFooterList,
     WizardFooterForm,
     WizardFooterNavigate,
+    WizardFooterConfirm,
     WizardFooterBack,
     WizardDetails,
     WizardEditHint,
@@ -337,7 +338,7 @@ impl Translator {
                 "还没有同步源 · 按 a 添加 WebDAV 或 S3"
             }
             (Language::ZhCn, MessageKey::WizardFooterList) => {
-                "a 添加  e 编辑  Enter 详情/保存  x 删除  t 测试  m 默认  L 语言  q 退出"
+                "a 添加  e 编辑  Enter 详情  x 删除  t 测试  m 默认  L 语言  q 退出"
             }
             (Language::ZhCn, MessageKey::WizardFooterForm) => {
                 "Esc 放弃  Ctrl+C 退出  Tab/Shift+Tab 字段  Enter 下一项/保存  直接输入"
@@ -345,6 +346,7 @@ impl Translator {
             (Language::ZhCn, MessageKey::WizardFooterNavigate) => {
                 "↑↓ 选择  Enter 确认  Esc 返回  q 退出"
             }
+            (Language::ZhCn, MessageKey::WizardFooterConfirm) => "Enter 确认  Esc 取消  q 退出",
             (Language::ZhCn, MessageKey::WizardFooterBack) => "Enter/Esc 返回  q 退出",
             (Language::ZhCn, MessageKey::WizardDetails) => "详情",
             (Language::ZhCn, MessageKey::WizardEditHint) => {
@@ -621,13 +623,16 @@ impl Translator {
                 "No sources yet · press a to add WebDAV or S3"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterList) => {
-                "a add  e edit  Enter details/save  x delete  t test  m default  L language  q exit"
+                "a add  e edit  Enter details  x delete  t test  m default  L language  q exit"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterForm) => {
                 "Esc discard  Ctrl+C exit  Tab/Shift+Tab field  Enter next/save  type to edit"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterNavigate) => {
                 "↑↓ choose  Enter confirm  Esc back  q exit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterConfirm) => {
+                "Enter confirm  Esc cancel  q exit"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterBack) => {
                 "Enter/Esc back  q exit"

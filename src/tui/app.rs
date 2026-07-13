@@ -171,10 +171,11 @@ impl App {
         } else {
             persisted.view
         };
+        let focus = normalized_focus(view, persisted.focus);
         Self {
             language,
             view,
-            focus: persisted.focus,
+            focus,
             agents,
             selected_agent,
             provider_cursors: persisted.provider_cursors,
@@ -389,6 +390,25 @@ fn next_focus(view: MainView, focus: FocusPane, forward: bool) -> FocusPane {
         current - 1
     };
     panes[next]
+}
+
+fn normalized_focus(view: MainView, focus: FocusPane) -> FocusPane {
+    match view {
+        MainView::Providers
+            if matches!(
+                focus,
+                FocusPane::Agents | FocusPane::List | FocusPane::Details
+            ) =>
+        {
+            focus
+        }
+        MainView::Providers => FocusPane::Agents,
+        MainView::Skills if matches!(focus, FocusPane::Agents | FocusPane::List) => focus,
+        MainView::Skills => FocusPane::Agents,
+        MainView::Activity => FocusPane::Activity,
+        MainView::Sources if matches!(focus, FocusPane::List | FocusPane::Details) => focus,
+        MainView::Sources => FocusPane::List,
+    }
 }
 
 fn move_index(current: usize, len: usize, delta: i32) -> usize {

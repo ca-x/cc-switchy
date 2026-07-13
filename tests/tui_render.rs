@@ -233,6 +233,23 @@ fn control_c_exits_from_a_wizard_form() {
 }
 
 #[test]
+fn wizard_applies_language_only_after_persistence_succeeds() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Language);
+    state.update(WizardAction::Move(-1));
+    state.update(WizardAction::Confirm);
+
+    assert_eq!(state.language, Language::EnUs);
+    assert!(matches!(
+        state.pop_command(),
+        Some(WizardCommand::ChangeLanguage(Language::ZhCn))
+    ));
+
+    state.mutation_failed("disk is read-only".to_string());
+    assert_eq!(state.language, Language::EnUs);
+}
+
+#[test]
 fn wizard_keeps_form_values_when_catalog_mutation_fails() {
     let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
     state.update(WizardAction::Add);
@@ -267,6 +284,50 @@ fn wizard_keeps_form_values_when_catalog_mutation_fails() {
         .as_deref()
         .unwrap_or_default()
         .contains("already exists"));
+}
+
+#[test]
+fn wizard_defers_defaultable_field_validation_to_the_catalog() {
+    let home = TempDir::new().expect("home");
+    let paths = cc_switchy::AppPaths::from_home(home.path());
+    let mut catalog =
+        SourceCatalog::load(ConfigStore::new(paths.config_file.clone())).expect("catalog");
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+    for character in "home".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "https://dav.example.test".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "user".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "secret".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for _ in 0.."cc-switch-sync".chars().count() {
+        state.update(WizardAction::Backspace);
+    }
+    state.update(WizardAction::NextField);
+    for _ in 0.."default".chars().count() {
+        state.update(WizardAction::Backspace);
+    }
+
+    state.update(WizardAction::Confirm);
+    let source = match state.pop_command().expect("add command") {
+        WizardCommand::Add(source) => source,
+        _ => panic!("expected Add"),
+    };
+    catalog.add(source).expect("catalog normalizes defaults");
+
+    assert_eq!(catalog.config().sources[0].remote_root, "cc-switch-sync");
+    assert_eq!(catalog.config().sources[0].profile, "default");
 }
 
 #[test]
@@ -323,6 +384,32 @@ fn wizard_footer_matches_the_current_mode() {
 }
 
 #[test]
+fn wizard_footer_only_advertises_actions_available_in_the_mode() {
+    let source = SourceConfig {
+        name: "home".to_string(),
+        remote_root: "cc-switch-sync".to_string(),
+        profile: "default".to_string(),
+        kind: SourceKind::WebDav {
+            webdav: WebDavConfig {
+                base_url: "https://dav.example.test".to_string(),
+                username: "user".to_string(),
+                password: "secret".to_string(),
+            },
+        },
+    };
+    let mut state = WizardState::new(Language::EnUs, vec![source], Some("home".to_string()));
+    let list = draw_wizard(&state, 100, 30);
+    assert!(list.contains("Enter details"));
+    assert!(!list.contains("details/save"));
+
+    state.update(WizardAction::Delete);
+    let confirm = draw_wizard(&state, 100, 30);
+    assert!(confirm.contains("Enter confirm"));
+    assert!(confirm.contains("Esc cancel"));
+    assert!(!confirm.contains("↑↓ choose"));
+}
+
+#[test]
 fn responsive_views_always_render_the_focused_pane() {
     let mut app = app(Language::EnUs, true);
     app.focus = FocusPane::Details;
@@ -337,6 +424,40 @@ fn responsive_views_always_render_the_focused_pane() {
     app.focus = FocusPane::List;
     let skills = draw(&app, 70, 24);
     assert!(skills.contains("› Skills"));
+}
+
+#[test]
+fn app_normalizes_focus_for_the_final_view() {
+    let empty = app(Language::EnUs, false);
+    assert_eq!(empty.view, MainView::Sources);
+    assert_eq!(empty.focus, FocusPane::List);
+
+    let fixture = app(Language::EnUs, true);
+    let sources = App::new(
+        Language::EnUs,
+        fixture.providers.clone(),
+        fixture.skills.clone(),
+        fixture.sources.clone(),
+        PersistedUiState {
+            view: MainView::Sources,
+            focus: FocusPane::Agents,
+            ..PersistedUiState::default()
+        },
+    );
+    assert_eq!(sources.focus, FocusPane::List);
+
+    let activity = App::new(
+        Language::EnUs,
+        fixture.providers,
+        fixture.skills,
+        fixture.sources,
+        PersistedUiState {
+            view: MainView::Activity,
+            focus: FocusPane::Details,
+            ..PersistedUiState::default()
+        },
+    );
+    assert_eq!(activity.focus, FocusPane::Activity);
 }
 
 #[test]

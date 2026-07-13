@@ -324,10 +324,10 @@ impl WizardState {
                 self.language_cursor = move_index(self.language_cursor, 3, delta);
             }
             WizardAction::Confirm => {
-                self.language =
+                let language =
                     [Language::Auto, Language::ZhCn, Language::EnUs][self.language_cursor];
                 self.commands
-                    .push_back(WizardCommand::ChangeLanguage(self.language));
+                    .push_back(WizardCommand::ChangeLanguage(language));
                 self.mode = WizardMode::List;
             }
             WizardAction::Cancel => self.mode = WizardMode::List,
@@ -365,17 +365,6 @@ impl WizardState {
     }
 
     fn build_source(&self) -> Option<SourceConfig> {
-        let required: &[usize] = match self.mode {
-            WizardMode::EditWebDav => &[0, 1, 2, 3, 4, 5],
-            WizardMode::EditS3 => &[0, 1, 2, 4, 5, 6, 7],
-            _ => &[],
-        };
-        if required
-            .iter()
-            .any(|index| self.fields[*index].value.trim().is_empty())
-        {
-            return None;
-        }
         match self.mode {
             WizardMode::EditWebDav => Some(SourceConfig {
                 name: self.fields[0].value.clone(),
@@ -536,8 +525,8 @@ pub fn render(frame: &mut Frame<'_>, state: &WizardState) {
         WizardMode::List => MessageKey::WizardFooterList,
         WizardMode::EditWebDav | WizardMode::EditS3 => MessageKey::WizardFooterForm,
         WizardMode::Details | WizardMode::TestConnection => MessageKey::WizardFooterBack,
+        WizardMode::ConfirmDelete => MessageKey::WizardFooterConfirm,
         WizardMode::ChooseType
-        | WizardMode::ConfirmDelete
         | WizardMode::ChooseReplacementDefault
         | WizardMode::LanguageSelect => MessageKey::WizardFooterNavigate,
     };

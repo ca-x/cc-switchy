@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make source forms accept normal text input, keep focus visible in every responsive layout, preserve failed submissions, and release the repair as `v0.1.1`.
+**Goal:** Make source forms accept normal text input, keep focus visible in every responsive layout, preserve failed submissions, and release the repair as `v0.2.0`.
 
 **Architecture:** Keep the existing pure TUI state model and make the key boundary mode-aware. Ratatui rendering will own cursor placement and contextual help, while the command runner will report catalog mutation success or failure back to `WizardState` before the form is cleared.
 
@@ -18,18 +18,30 @@
 - Catalog validation remains the single authority for URL, required-field, uniqueness, and persistence errors.
 - Do not add field-internal cursor movement, mouse support, clipboard support, or an asynchronous connection-test state machine.
 - Release only after focused tests, the full suite, formatting, Clippy, a release build, and a PTY smoke test pass.
+- Release review changed the target from the initially proposed patch release to `v0.2.0` because the public `action_for_key` signature and `MessageKey` variants changed.
 
 ---
 
 ## File Map
 
 - `src/tui/wizard.rs`: wizard mode transitions, key mapping, form state, field rendering, and cursor placement.
+- `src/tui/app.rs`: normalization of persisted focus against the final rendered view.
 - `src/commands/wizard.rs`: catalog mutation execution and success/failure feedback to the form state.
+- `src/config/catalog.rs`, `src/config/store.rs`: reconciliation when a save reports an error after the candidate configuration reached disk.
 - `src/tui/view.rs`: responsive pane rendering, text-level focus markers, and view-specific footer hints.
 - `src/i18n.rs`: Chinese and English contextual footer strings.
 - `tests/tui_render.rs`: key-boundary, state-lifecycle, cursor, masking, footer, and responsive-focus regression tests.
 - `README.md`: public keyboard contract and release-specific security limit.
-- `Cargo.toml`, `Cargo.lock`: package version `0.1.1`.
+- `Cargo.toml`, `Cargo.lock`: package version `0.2.0`.
+
+## Release Review Amendments
+
+The pre-release review added four required checks to the original task sequence:
+
+- normalize invalid persisted focus pairs, including the empty-to-first-source path;
+- construct form candidates without duplicating catalog validation or defaulting rules;
+- reconcile post-persist errors by reloading the catalog and accepting the mutation only when disk matches the normalized candidate;
+- defer in-memory language changes until persistence succeeds and keep footer hints exact for each wizard mode.
 
 ### Task 1: Make wizard input dispatch mode-aware
 
@@ -603,13 +615,13 @@ git commit -m "Keep TUI focus visible across views"
 
 **Interfaces:**
 - Consumes: the implemented keyboard contract and current package version `0.1.0`.
-- Produces: documented form input behavior and package version `0.1.1`.
+- Produces: documented form input behavior and package version `0.2.0`.
 
 - [ ] **Step 1: Update bilingual keyboard documentation**
 
 State that printable characters are normal input inside forms, `Esc` discards the form, `q` exits outside forms, and `Ctrl+C` exits from every wizard screen. Keep the Chinese and English sections equivalent.
 
-Change the Chinese private-CA version-specific statement from `v0.1.0` to `v0.1.1` because the limitation remains true for the new release.
+Change the Chinese private-CA version-specific statement from `v0.1.0` to `v0.2.0` because the limitation remains true for the new release.
 
 - [ ] **Step 2: Bump the package version**
 
@@ -618,10 +630,10 @@ Change:
 ```toml
 [package]
 name = "cc-switchy"
-version = "0.1.1"
+version = "0.2.0"
 ```
 
-After editing `Cargo.toml`, run `cargo check --locked`. Expected: Cargo reports that `Cargo.lock` needs to be updated. Then run `cargo check` to update the root package entry in `Cargo.lock` from `0.1.0` to `0.1.1` without changing dependency versions.
+After editing `Cargo.toml`, run `cargo check --locked`. Expected: Cargo reports that `Cargo.lock` needs to be updated. Then run `cargo check` to update the root package entry in `Cargo.lock` from `0.1.0` to `0.2.0` without changing dependency versions.
 
 - [ ] **Step 3: Run documentation and version checks**
 
@@ -633,25 +645,25 @@ cargo metadata --no-deps --format-version 1
 rg -n 'version = "0.1.0"|v0\.1\.0' Cargo.toml Cargo.lock README.md
 ```
 
-Expected: README tests pass, metadata reports `cc-switchy 0.1.1`, and the final search returns no stale release-specific version in the package files or README.
+Expected: README tests pass, metadata reports `cc-switchy 0.2.0`, and the final search returns no stale release-specific version in the package files or README.
 
 - [ ] **Step 4: Commit the release version**
 
 ```bash
 git add README.md Cargo.toml Cargo.lock
-git commit -m "Prepare cc-switchy v0.1.1"
+git commit -m "Prepare cc-switchy v0.2.0"
 ```
 
-### Task 5: Verify, smoke test, tag, and push v0.1.1
+### Task 5: Verify, smoke test, tag, and push v0.2.0
 
 **Files:**
 - Verify: all tracked files
-- Create Git tag: `v0.1.1`
-- Push: `main` and `refs/tags/v0.1.1` to `origin`
+- Create Git tag: `v0.2.0`
+- Push: `main` and `refs/tags/v0.2.0` to `origin`
 
 **Interfaces:**
 - Consumes: clean commits implementing Tasks 1 through 4.
-- Produces: verified `main` and annotated tag `v0.1.1` on `git@github.com:ca-x/cc-switchy.git`.
+- Produces: verified `main` and annotated tag `v0.2.0` on `git@github.com:ca-x/cc-switchy.git`.
 
 - [ ] **Step 1: Run static and test verification**
 
@@ -695,26 +707,26 @@ Run:
 ```bash
 git fetch --tags origin
 git log --oneline --decorate origin/main..HEAD
-git tag --list v0.1.1
-git ls-remote --tags origin refs/tags/v0.1.1
+git tag --list v0.2.0
+git ls-remote --tags origin refs/tags/v0.2.0
 ```
 
-Expected: the commit list contains only the approved design, TUI repair, documentation, and version commits; both tag queries return no existing `v0.1.1`. If the remote tag exists, stop before tagging and select the next unused patch version consistently in Cargo and README.
+Expected: the commit list contains only the approved design, TUI repair, documentation, and version commits; both tag queries return no existing `v0.2.0`. If the remote tag exists, stop before tagging and select the next unused patch version consistently in Cargo and README.
 
 - [ ] **Step 4: Create and verify the annotated tag**
 
 ```bash
-git tag -a v0.1.1 -m "cc-switchy v0.1.1"
-git show --stat --oneline v0.1.1
+git tag -a v0.2.0 -m "cc-switchy v0.2.0"
+git show --stat --oneline v0.2.0
 ```
 
-Expected: `v0.1.1` points at the verified release commit and includes the intended source, tests, README, Cargo version, design, and plan history.
+Expected: `v0.2.0` points at the verified release commit and includes the intended source, tests, README, Cargo version, design, and plan history.
 
 - [ ] **Step 5: Push the branch and tag**
 
 ```bash
 git push origin main
-git push origin v0.1.1
+git push origin v0.2.0
 ```
 
 Expected: both pushes succeed without force. Do not use `--force` or replace an existing tag.
@@ -723,7 +735,7 @@ Expected: both pushes succeed without force. Do not use `--force` or replace an 
 
 ```bash
 git status --short --branch -uall
-git ls-remote origin refs/heads/main refs/tags/v0.1.1 refs/tags/v0.1.1^{}
+git ls-remote origin refs/heads/main refs/tags/v0.2.0 refs/tags/v0.2.0^{}
 ```
 
 Expected: local `main` matches `origin/main`; the tag and peeled tag object resolve to the verified release commit.

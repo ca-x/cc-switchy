@@ -178,7 +178,7 @@ ZIP 路径和 SQL，再创建本地备份并替换数据库与 Skills。
 - `config.toml` 与 `state.json` 在 Unix 上使用 `0600`；凭据仍以兼容所需的明文保存。
 - 下载大小、ZIP 展开路径/数量/总量、SQL 导入和 SHA-256 均在修改本地状态前校验。
 - Reqwest 使用 Rustls 与 webpki roots。依赖仅由私有 CA 签发的 WebDAV/S3 端点
-  默认不会被信任；v0.1.1 不提供自定义 CA 导入参数。
+  默认不会被信任；v0.2.0 不提供自定义 CA 导入参数。
 - 日志和 TUI 会遮挡密码、Authorization、S3 签名和 URL 查询值，但操作系统、
   终端录制和备份权限仍需由使用者保护。
 

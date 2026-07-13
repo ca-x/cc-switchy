@@ -9,11 +9,25 @@ use crate::AppError;
 
 pub struct ConfigStore {
     path: PathBuf,
+    #[cfg(test)]
+    fail_after_persist: bool,
 }
 
 impl ConfigStore {
     pub fn new(path: PathBuf) -> Self {
-        Self { path }
+        Self {
+            path,
+            #[cfg(test)]
+            fail_after_persist: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn failing_after_persist(path: PathBuf) -> Self {
+        Self {
+            path,
+            fail_after_persist: true,
+        }
     }
 
     pub fn load(&self) -> Result<AppConfig, AppError> {
@@ -66,6 +80,13 @@ impl ConfigStore {
             let source = error.error;
             AppError::io(&self.path, source)
         })?;
+        #[cfg(test)]
+        if self.fail_after_persist {
+            return Err(AppError::io(
+                &self.path,
+                std::io::Error::other("injected post-persist failure"),
+            ));
+        }
         set_private_file_permissions(&self.path)?;
         sync_directory(parent)?;
         Ok(())

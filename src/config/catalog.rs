@@ -133,8 +133,85 @@ impl SourceCatalog {
     fn commit(&mut self, mut candidate: AppConfig) -> Result<(), AppError> {
         candidate.normalize();
         candidate.validate()?;
-        self.store.save(&candidate)?;
-        self.config = candidate;
-        Ok(())
+        match self.store.save(&candidate) {
+            Ok(()) => {
+                self.config = candidate;
+                Ok(())
+            }
+            Err(error) => match self.store.load() {
+                Ok(persisted) if persisted == candidate => {
+                    self.config = persisted;
+                    Ok(())
+                }
+                _ => Err(error),
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::config::{SourceKind, WebDavConfig};
+
+    #[test]
+    fn committed_add_is_reconciled_after_a_post_persist_error() {
+        let home = TempDir::new().expect("home");
+        let path = home.path().join("config.toml");
+        let store = ConfigStore::failing_after_persist(path.clone());
+        let mut catalog = SourceCatalog::load(store).expect("catalog");
+
+        catalog.add(webdav("home")).expect("reconciled add");
+
+        assert_eq!(catalog.config().default_source.as_deref(), Some("home"));
+        let reloaded = SourceCatalog::load(ConfigStore::new(path)).expect("reloaded catalog");
+        assert_eq!(reloaded.config().sources[0].name, "home");
+    }
+
+    #[test]
+    fn committed_rename_is_reconciled_after_a_post_persist_error() {
+        let home = TempDir::new().expect("home");
+        let path = home.path().join("config.toml");
+        let mut seed = SourceCatalog::load(ConfigStore::new(path.clone())).expect("seed catalog");
+        seed.add(webdav("old")).expect("seed source");
+
+        let store = ConfigStore::failing_after_persist(path.clone());
+        let mut catalog = SourceCatalog::load(store).expect("catalog");
+        catalog
+            .update("old", webdav("new"))
+            .expect("reconciled rename");
+
+        assert_eq!(catalog.config().default_source.as_deref(), Some("new"));
+        let reloaded = SourceCatalog::load(ConfigStore::new(path)).expect("reloaded catalog");
+        assert_eq!(reloaded.config().sources[0].name, "new");
+    }
+
+    #[test]
+    fn failed_write_is_not_reconciled_when_disk_does_not_match() {
+        let home = TempDir::new().expect("home");
+        let blocking_parent = home.path().join("not-a-directory");
+        std::fs::write(&blocking_parent, "blocking file").expect("blocking file");
+        let path = blocking_parent.join("config.toml");
+        let mut catalog = SourceCatalog::load(ConfigStore::new(path)).expect("default catalog");
+
+        assert!(catalog.add(webdav("home")).is_err());
+        assert!(catalog.config().sources.is_empty());
+    }
+
+    fn webdav(name: &str) -> SourceConfig {
+        SourceConfig {
+            name: name.to_string(),
+            remote_root: "cc-switch-sync".to_string(),
+            profile: "default".to_string(),
+            kind: SourceKind::WebDav {
+                webdav: WebDavConfig {
+                    base_url: "https://dav.example.test".to_string(),
+                    username: "user".to_string(),
+                    password: "secret".to_string(),
+                },
+            },
+        }
     }
 }
