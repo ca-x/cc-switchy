@@ -22,6 +22,44 @@ pub enum AppError {
     ConfigParse(#[from] toml::de::Error),
     #[error("failed to serialize configuration: {0}")]
     ConfigSerialize(#[from] toml::ser::Error),
+    #[error("manifest exceeds the {max} byte limit: {size} bytes")]
+    ManifestTooLarge { size: usize, max: usize },
+    #[error("failed to parse manifest: {0}")]
+    ManifestParse(#[source] serde_json::Error),
+    #[error("manifest format is incompatible: {found}")]
+    ManifestFormatIncompatible { found: String },
+    #[error("manifest protocol version {found} is incompatible with local version {supported}")]
+    ManifestVersionIncompatible { found: u32, supported: u32 },
+    #[error("manifest is missing the database compatibility version")]
+    DatabaseVersionMissing,
+    #[error(
+        "database compatibility version {found} is incompatible with local version {supported}"
+    )]
+    DatabaseVersionIncompatible { found: u32, supported: u32 },
+    #[error("manifest is missing required artifact {artifact}")]
+    ManifestMissingArtifact { artifact: String },
+    #[error("artifact {artifact} exceeds the {max} byte limit: {size} bytes")]
+    ArtifactTooLarge {
+        artifact: String,
+        size: u64,
+        max: u64,
+    },
+    #[error("artifact {artifact} has an invalid SHA-256 value")]
+    InvalidArtifactHash { artifact: String },
+    #[error("snapshot ID mismatch: expected {expected}, found {actual}")]
+    SnapshotIdMismatch { expected: String, actual: String },
+    #[error("artifact {artifact} size mismatch: expected {expected}, found {actual}")]
+    ArtifactSizeMismatch {
+        artifact: String,
+        expected: u64,
+        actual: u64,
+    },
+    #[error("artifact {artifact} SHA-256 mismatch: expected {expected}, found {actual}")]
+    ArtifactHashMismatch {
+        artifact: String,
+        expected: String,
+        actual: String,
+    },
 }
 
 impl AppError {

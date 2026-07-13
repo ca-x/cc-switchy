@@ -3,6 +3,8 @@ pub mod config;
 pub mod error;
 pub mod i18n;
 pub mod paths;
+pub mod progress;
+pub mod remote;
 
 pub use cli::{Cli, RunMode};
 pub use error::AppError;

@@ -1,0 +1,18 @@
+{
+  "format": "cc-switch-webdav-sync",
+  "version": 2,
+  "dbCompatVersion": 6,
+  "deviceName": "fixture-host",
+  "createdAt": "2026-07-13T10:42:00Z",
+  "artifacts": {
+    "db.sql": {
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 123
+    },
+    "skills.zip": {
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size": 456
+    }
+  },
+  "snapshotId": "924931de8535d599eeef1a42ecf8a676a84ce80c5a41e9684089f6e784d2bb30"
+}
