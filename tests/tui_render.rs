@@ -208,6 +208,68 @@ fn control_c_exits_from_a_wizard_form() {
 }
 
 #[test]
+fn wizard_keeps_form_values_when_catalog_mutation_fails() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+    for character in "duplicate".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "https://dav.example.test".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "user".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    for character in "secret".chars() {
+        state.update(WizardAction::Input(character));
+    }
+    state.update(WizardAction::NextField);
+    state.update(WizardAction::NextField);
+    let before = state.form_values();
+
+    state.update(WizardAction::Confirm);
+    assert!(matches!(state.pop_command(), Some(WizardCommand::Add(_))));
+    state.mutation_failed("source already exists".to_string());
+
+    assert_eq!(state.mode, WizardMode::EditWebDav);
+    assert_eq!(state.form_values(), before);
+    assert!(state
+        .status
+        .as_deref()
+        .unwrap_or_default()
+        .contains("already exists"));
+}
+
+#[test]
+fn wizard_clears_form_only_after_catalog_mutation_succeeds() {
+    let source = SourceConfig {
+        name: "home".to_string(),
+        remote_root: "cc-switch-sync".to_string(),
+        profile: "default".to_string(),
+        kind: SourceKind::WebDav {
+            webdav: WebDavConfig {
+                base_url: "https://dav.example.test".to_string(),
+                username: "user".to_string(),
+                password: "secret".to_string(),
+            },
+        },
+    };
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    state.update(WizardAction::Add);
+    state.update(WizardAction::Confirm);
+
+    state.mutation_succeeded(vec![source], Some("home".to_string()));
+
+    assert_eq!(state.mode, WizardMode::List);
+    assert!(state.form_values().is_empty());
+    assert_eq!(state.status.as_deref(), Some("✓ Saved"));
+}
+
+#[test]
 fn no_source_empty_state_is_bilingual_and_actionable() {
     let mut english = app(Language::EnUs, false);
     english.view = MainView::Sources;

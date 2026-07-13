@@ -150,6 +150,25 @@ impl WizardState {
         self.status = Some(status.into());
     }
 
+    pub fn mutation_failed(&mut self, error: String) {
+        self.status = Some(format!("× {error}"));
+    }
+
+    pub fn mutation_succeeded(
+        &mut self,
+        sources: Vec<SourceConfig>,
+        default_source: Option<String>,
+    ) {
+        self.update_sources(sources, default_source);
+        self.fields.clear();
+        self.field = 0;
+        self.edit_original = None;
+        self.mode = WizardMode::List;
+        self.status = Some(
+            Translator::new(self.language).text(MessageKey::WizardSaved, &MessageArgs::default()),
+        );
+    }
+
     pub fn form_values(&self) -> Vec<String> {
         self.fields
             .iter()
@@ -228,13 +247,12 @@ impl WizardState {
             WizardAction::Confirm if self.field + 1 < self.fields.len() => self.field += 1,
             WizardAction::Confirm => {
                 if let Some(source) = self.build_source() {
-                    if let Some(original) = self.edit_original.take() {
+                    if let Some(original) = self.edit_original.clone() {
                         self.commands
                             .push_back(WizardCommand::Update { original, source });
                     } else {
                         self.commands.push_back(WizardCommand::Add(source));
                     }
-                    self.mode = WizardMode::List;
                 } else {
                     self.status = Some(
                         Translator::new(self.language)

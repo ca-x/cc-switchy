@@ -7,12 +7,12 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use super::tui::{CrosstermTerminal, TerminalGuard};
-use crate::config::{ConfigStore, SourceCatalog};
+use crate::config::{ConfigStore, SourceCatalog, SourceConfig};
 use crate::progress::NoopProgress;
 use crate::remote::RemoteClient;
 use crate::tui::wizard::{self, WizardCommand};
 use crate::tui::WizardState;
-use crate::{AppError, AppPaths, Language};
+use crate::{AppError, AppPaths, Language, MessageArgs, MessageKey, Translator};
 
 pub async fn run(paths: AppPaths, language: Language) -> Result<(), AppError> {
     let _guard = TerminalGuard::enter()?;
@@ -59,24 +59,30 @@ pub async fn run_embedded(
             match command {
                 WizardCommand::Exit => return Ok(()),
                 WizardCommand::Add(source) => {
-                    mutate_catalog(&paths, &mut state, |catalog| catalog.add(source))?;
+                    let result = mutate_catalog(&paths, |catalog| catalog.add(source));
+                    finish_catalog_mutation(&mut state, result, true);
                 }
                 WizardCommand::Update { original, source } => {
-                    mutate_catalog(&paths, &mut state, |catalog| {
-                        catalog.update(&original, source)
-                    })?;
+                    let result =
+                        mutate_catalog(&paths, |catalog| catalog.update(&original, source));
+                    finish_catalog_mutation(&mut state, result, true);
                 }
                 WizardCommand::Delete { name, replacement } => {
-                    mutate_catalog(&paths, &mut state, |catalog| {
+                    let result = mutate_catalog(&paths, |catalog| {
                         catalog.delete(&name, replacement.as_deref())
-                    })?;
+                    });
+                    finish_catalog_mutation(&mut state, result, false);
                 }
                 WizardCommand::MakeDefault(name) => {
-                    mutate_catalog(&paths, &mut state, |catalog| catalog.set_default(&name))?;
+                    let result = mutate_catalog(&paths, |catalog| catalog.set_default(&name));
+                    finish_catalog_mutation(&mut state, result, false);
                 }
                 WizardCommand::ChangeLanguage(language) => {
-                    mutate_catalog(&paths, &mut state, |catalog| catalog.set_language(language))?;
-                    state.language = language;
+                    let result = mutate_catalog(&paths, |catalog| catalog.set_language(language));
+                    if result.is_ok() {
+                        state.language = language;
+                    }
+                    finish_catalog_mutation(&mut state, result, false);
                 }
                 WizardCommand::Test(name) => {
                     let result = test_source(&paths, &name).await;
@@ -92,23 +98,33 @@ pub async fn run_embedded(
 
 fn mutate_catalog(
     paths: &AppPaths,
-    state: &mut WizardState,
     mutation: impl FnOnce(&mut SourceCatalog) -> Result<(), AppError>,
-) -> Result<(), AppError> {
+) -> Result<(Vec<SourceConfig>, Option<String>), AppError> {
     let mut catalog = SourceCatalog::load(ConfigStore::new(paths.config_file.clone()))?;
-    match mutation(&mut catalog) {
-        Ok(()) => {
-            state.update_sources(
-                catalog.config().sources.clone(),
-                catalog.config().default_source.clone(),
+    mutation(&mut catalog)?;
+    Ok((
+        catalog.config().sources.clone(),
+        catalog.config().default_source.clone(),
+    ))
+}
+
+fn finish_catalog_mutation(
+    state: &mut WizardState,
+    result: Result<(Vec<SourceConfig>, Option<String>), AppError>,
+    close_form: bool,
+) {
+    match result {
+        Ok((sources, default_source)) if close_form => {
+            state.mutation_succeeded(sources, default_source);
+        }
+        Ok((sources, default_source)) => {
+            state.update_sources(sources, default_source);
+            state.set_status(
+                Translator::new(state.language)
+                    .text(MessageKey::WizardSaved, &MessageArgs::default()),
             );
-            state.set_status("✓ Saved");
-            Ok(())
         }
-        Err(error) => {
-            state.set_status(format!("× {error}"));
-            Ok(())
-        }
+        Err(error) => state.mutation_failed(error.to_string()),
     }
 }
 
