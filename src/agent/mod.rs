@@ -4,6 +4,7 @@ mod paths;
 mod provider;
 mod repository;
 mod settings;
+mod skills;
 
 pub use mcp::McpProjector;
 pub use model::{
@@ -14,3 +15,4 @@ pub use paths::AgentPaths;
 pub use provider::ProviderProjector;
 pub use repository::AgentRepository;
 pub use settings::{effective_current_provider, DeviceSettings};
+pub use skills::SkillProjector;

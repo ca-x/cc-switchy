@@ -2,7 +2,7 @@ use std::fs;
 
 use cc_switchy::agent::{
     effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector,
-    ProviderProjector, SkillSyncMethod,
+    ProviderProjector, SkillProjector, SkillSyncMethod,
 };
 use cc_switchy::progress::NoopProgress;
 use cc_switchy::AppError;
@@ -74,6 +74,24 @@ fn mcp_database(home: &TempDir) -> std::path::PathBuf {
                  ('known-disabled', 'Known disabled', '{"type":"sse","url":"https://disabled.example.test/sse"}', '[]', 0, 0, 0, 0, 0);"#,
         )
         .expect("MCP rows");
+    path
+}
+
+fn skills_database(home: &TempDir) -> std::path::PathBuf {
+    let path = provider_database(home);
+    let connection = Connection::open(&path).expect("database");
+    connection
+        .execute_batch(
+            "DELETE FROM skills;
+             INSERT INTO skills (
+               id, name, directory, enabled_claude, enabled_codex, enabled_gemini,
+               enabled_opencode, enabled_hermes, installed_at, updated_at
+             ) VALUES
+               ('good', 'Good Skill', 'good', 1, 1, 1, 1, 1, 1, 1),
+               ('disabled', 'Disabled Skill', 'disabled', 0, 0, 0, 0, 0, 1, 1),
+               ('bad', 'Bad Skill', 'bad', 1, 0, 0, 0, 0, 1, 1);",
+        )
+        .expect("Skill rows");
     path
 }
 
@@ -652,4 +670,128 @@ fn corrupt_mcp_config_warns_without_blocking_other_agents() {
     )
     .expect("Gemini JSON");
     assert!(gemini.pointer("/mcpServers/stdio-managed").is_some());
+}
+
+#[test]
+fn skills_copy_reconciles_managed_targets_and_preserves_unrelated_directories() {
+    let home = TempDir::new().expect("home");
+    let db_path = skills_database(&home);
+    let ssot = home.path().join(".cc-switch/skills");
+    for name in ["good", "disabled", "orphan", "bad"] {
+        fs::create_dir_all(ssot.join(name)).expect("SSOT Skill directory");
+    }
+    fs::write(ssot.join("good/SKILL.md"), "# Good\n").expect("Good SKILL.md");
+    fs::write(ssot.join("good/data.txt"), "copied").expect("Good data");
+    fs::write(ssot.join("disabled/SKILL.md"), "# Disabled\n").expect("Disabled SKILL.md");
+    fs::write(ssot.join("orphan/SKILL.md"), "# Orphan\n").expect("Orphan SKILL.md");
+    let settings_path = home.path().join("settings.json");
+    fs::write(&settings_path, r#"{"skillSyncMethod":"copy"}"#).expect("settings");
+    let settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let app_dir = paths.skills_dir(Agent::Claude).expect("Claude Skills path");
+    fs::create_dir_all(app_dir.join("personal")).expect("personal Skill");
+    fs::write(app_dir.join("personal/keep.txt"), "keep").expect("personal data");
+
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(ssot.join("disabled"), app_dir.join("disabled"))
+            .expect("disabled link");
+        std::os::unix::fs::symlink(ssot.join("orphan"), app_dir.join("orphan"))
+            .expect("orphan link");
+    }
+
+    let repo = AgentRepository::open(&db_path).expect("repository");
+    let report =
+        SkillProjector::new(&repo, &settings, &paths, Arc::new(NoopProgress)).project_all();
+
+    let good = app_dir.join("good");
+    assert!(good.join("SKILL.md").is_file());
+    assert_eq!(
+        fs::read_to_string(good.join("data.txt")).expect("copied data"),
+        "copied"
+    );
+    assert!(good.join(".cc-switchy-managed").is_file());
+    assert!(!good
+        .symlink_metadata()
+        .expect("Good metadata")
+        .file_type()
+        .is_symlink());
+    assert!(app_dir.join("personal/keep.txt").is_file());
+    assert!(!app_dir.join("disabled").exists());
+    #[cfg(unix)]
+    assert!(!app_dir.join("orphan").exists());
+    assert!(fs::read_dir(&app_dir)
+        .expect("Claude Skills entries")
+        .all(|entry| !entry
+            .expect("entry")
+            .file_name()
+            .to_string_lossy()
+            .contains(".tmp-")));
+    assert!(report
+        .warnings
+        .iter()
+        .any(|warning| warning.agent == Some(Agent::Claude)));
+    assert!(report.applied_agents.contains(&Agent::Codex));
+    assert!(report.skipped_agents.contains(&Agent::ClaudeDesktop));
+    assert!(report.skipped_agents.contains(&Agent::OpenClaw));
+}
+
+#[test]
+fn skills_auto_falls_back_to_copy_when_symlink_creation_fails() {
+    let home = TempDir::new().expect("home");
+    let db_path = skills_database(&home);
+    let ssot = home.path().join(".cc-switch/skills/good");
+    fs::create_dir_all(&ssot).expect("SSOT Skill");
+    fs::write(ssot.join("SKILL.md"), "# Good\n").expect("SKILL.md");
+    let settings = DeviceSettings::default();
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+
+    std::env::set_var("CC_SWITCHY_TEST_FORCE_SYMLINK_FAILURE", "1");
+    let result = SkillProjector::new(&repo, &settings, &paths, Arc::new(NoopProgress))
+        .project_agent(Agent::Codex);
+    std::env::remove_var("CC_SWITCHY_TEST_FORCE_SYMLINK_FAILURE");
+    result.expect("Auto fallback");
+
+    let destination = paths
+        .skills_dir(Agent::Codex)
+        .expect("Codex Skills")
+        .join("good");
+    assert!(destination.join("SKILL.md").is_file());
+    assert!(destination.join(".cc-switchy-managed").is_file());
+    assert!(!destination
+        .symlink_metadata()
+        .expect("destination metadata")
+        .file_type()
+        .is_symlink());
+}
+
+#[cfg(unix)]
+#[test]
+fn skills_symlink_mode_links_only_to_a_valid_ssot_source() {
+    let home = TempDir::new().expect("home");
+    let db_path = skills_database(&home);
+    let ssot = home.path().join(".cc-switch/skills/good");
+    fs::create_dir_all(&ssot).expect("SSOT Skill");
+    fs::write(ssot.join("SKILL.md"), "# Good\n").expect("SKILL.md");
+    let settings_path = home.path().join("settings.json");
+    fs::write(&settings_path, r#"{"skillSyncMethod":"symlink"}"#).expect("settings");
+    let settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+
+    SkillProjector::new(&repo, &settings, &paths, Arc::new(NoopProgress))
+        .project_agent(Agent::Codex)
+        .expect("Symlink projection");
+
+    let destination = paths
+        .skills_dir(Agent::Codex)
+        .expect("Codex Skills")
+        .join("good");
+    assert!(destination
+        .symlink_metadata()
+        .expect("destination metadata")
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read_link(destination).expect("Skill link target"), ssot);
 }

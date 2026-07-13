@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use cc_switchy::agent::{
     Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector, ProviderProjector,
+    SkillProjector,
 };
 use cc_switchy::progress::NoopProgress;
 use tempfile::TempDir;
@@ -82,4 +83,20 @@ fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
         "real compatibility MCP projection warnings: {:?}",
         mcp_report.warnings
     );
+
+    #[cfg(unix)]
+    if let Some(real_skills) = std::env::var_os("CC_SWITCHY_REAL_SKILLS") {
+        let temporary_skills = temporary.path().join(".cc-switch/skills");
+        fs::create_dir_all(temporary_skills.parent().expect("Skills parent"))
+            .expect("temporary Skills parent");
+        std::os::unix::fs::symlink(PathBuf::from(real_skills), &temporary_skills)
+            .expect("read-only SSOT link");
+        let skill_report =
+            SkillProjector::new(&repo, &settings, &paths, Arc::new(NoopProgress)).project_all();
+        assert!(
+            skill_report.warnings.is_empty(),
+            "real compatibility Skill projection warnings: {:?}",
+            skill_report.warnings
+        );
+    }
 }
