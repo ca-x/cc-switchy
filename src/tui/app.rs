@@ -274,6 +274,32 @@ impl App {
         self.progress.push(status, text.into());
     }
 
+    pub(crate) fn set_source_status(&mut self, source: &str, status: impl Into<String>) {
+        if let Some(item) = self
+            .sources
+            .iter_mut()
+            .find(|item| item.config.name == source)
+        {
+            item.status = Some(status.into());
+        }
+    }
+
+    pub(crate) fn preserve_source_statuses_from(&mut self, old: &App) {
+        let statuses = old
+            .sources
+            .iter()
+            .filter_map(|source| {
+                source
+                    .status
+                    .clone()
+                    .map(|status| (source.config.name.clone(), status))
+            })
+            .collect::<HashMap<_, _>>();
+        for source in &mut self.sources {
+            source.status = statuses.get(&source.config.name).cloned();
+        }
+    }
+
     pub fn persisted(&self) -> PersistedUiState {
         PersistedUiState {
             view: self.view,
@@ -446,4 +472,63 @@ fn set_private_file(path: &Path) -> Result<(), crate::AppError> {
 #[cfg(not(unix))]
 fn set_private_file(_path: &Path) -> Result<(), crate::AppError> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{SourceKind, WebDavConfig};
+
+    fn app_with_sources<const N: usize>(sources: [(&str, Option<&str>); N]) -> App {
+        let sources = sources
+            .into_iter()
+            .map(|(name, status)| ViewSource {
+                config: SourceConfig {
+                    name: name.to_string(),
+                    remote_root: "cc-switch-sync".to_string(),
+                    profile: "default".to_string(),
+                    kind: SourceKind::WebDav {
+                        webdav: WebDavConfig {
+                            base_url: "https://dav.example.test".to_string(),
+                            username: String::new(),
+                            password: String::new(),
+                        },
+                    },
+                },
+                is_default: name == "home",
+                status: status.map(str::to_string),
+            })
+            .collect();
+        App::new(
+            Language::EnUs,
+            HashMap::new(),
+            HashMap::new(),
+            sources,
+            PersistedUiState::default(),
+        )
+    }
+
+    #[test]
+    fn source_statuses_survive_reload_only_for_exact_names() {
+        let old = app_with_sources([
+            ("home", Some("✓ Snapshot abc")),
+            ("old", Some("× failed")),
+        ]);
+        let mut new = app_with_sources([("home", None), ("renamed", None)]);
+
+        new.preserve_source_statuses_from(&old);
+
+        assert_eq!(new.sources[0].status.as_deref(), Some("✓ Snapshot abc"));
+        assert_eq!(new.sources[1].status, None);
+    }
+
+    #[test]
+    fn source_status_updates_only_the_requested_source() {
+        let mut app = app_with_sources([("home", None), ("work", None)]);
+
+        app.set_source_status("work", "Testing…");
+
+        assert_eq!(app.sources[0].status, None);
+        assert_eq!(app.sources[1].status.as_deref(), Some("Testing…"));
+    }
 }
