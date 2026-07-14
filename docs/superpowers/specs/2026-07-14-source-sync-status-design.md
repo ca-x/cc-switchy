@@ -28,6 +28,7 @@ a remote-to-local synchronization without forcing the user to switch views.
 - No changes to the remote protocol, credentials, restore transaction, or
   synchronization semantics.
 - No automatic navigation to the Activity view.
+- No change to the public `ProgressEvent` variant shape.
 
 ## Considered approaches
 
@@ -66,6 +67,14 @@ Statuses are copied only to sources still present after reload; deleted or
 renamed sources do not retain stale state. This applies consistently after sync,
 provider actions, default-source changes, and returning from the wizard.
 
+### Skill restore progress
+
+Each existing `ApplyingSkills` progress event includes the current Skill display
+name together with the agent label and the existing completed/total counter. The
+CLI and TUI therefore render progress such as `Codex · using-superpowers 12/76`
+without changing the public event shape. If a display name is blank, the Skill
+directory name is used as the stable fallback.
+
 ## Error handling and safety
 
 The Sources view reuses the same error values already written to Activity. No
@@ -80,6 +89,9 @@ The regression tests exercise two observable boundaries:
    unrelated, removed, or renamed sources do not inherit it;
 2. rendered Sources view: testing, synchronized, and failed states are visible
    in source details using localized text.
+3. Skill projection progress: emitted progress identifies the current agent,
+   Skill name, completed count, and total count, including the directory-name
+   fallback for a blank display name.
 
 The full Rust suite remains the compatibility gate. A PTY smoke test against the
 configured source verifies that `t` reaches a terminal result without leaving a
