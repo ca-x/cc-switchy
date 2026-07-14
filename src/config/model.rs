@@ -16,6 +16,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub default_source: Option<String>,
     #[serde(default)]
+    pub backup: BackupConfig,
+    #[serde(default)]
     pub sources: Vec<SourceConfig>,
 }
 
@@ -25,7 +27,25 @@ impl Default for AppConfig {
             version: CONFIG_VERSION,
             language: Language::Auto,
             default_source: None,
+            backup: BackupConfig::default(),
             sources: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackupConfig {
+    #[serde(default = "default_backup_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_backup_max_count")]
+    pub max_count: usize,
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_backup_enabled(),
+            max_count: default_backup_max_count(),
         }
     }
 }
@@ -261,4 +281,12 @@ fn default_remote_root() -> String {
 
 fn default_profile() -> String {
     "default".to_string()
+}
+
+const fn default_backup_enabled() -> bool {
+    true
+}
+
+const fn default_backup_max_count() -> usize {
+    10
 }

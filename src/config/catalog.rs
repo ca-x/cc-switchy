@@ -1,4 +1,4 @@
-use super::{AppConfig, ConfigStore, SourceConfig};
+use super::{AppConfig, BackupConfig, ConfigStore, SourceConfig};
 use crate::{AppError, Language};
 
 pub struct SourceCatalog {
@@ -114,6 +114,12 @@ impl SourceCatalog {
     pub fn set_language(&mut self, language: Language) -> Result<(), AppError> {
         let mut candidate = self.config.clone();
         candidate.language = language;
+        self.commit(candidate)
+    }
+
+    pub fn set_backup_config(&mut self, backup: BackupConfig) -> Result<(), AppError> {
+        let mut candidate = self.config.clone();
+        candidate.backup = backup;
         self.commit(candidate)
     }
 

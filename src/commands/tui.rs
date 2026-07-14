@@ -456,18 +456,30 @@ fn handle_message(
             match result {
                 Ok(outcome) => {
                     let warnings = outcome.projection.warnings.len();
+                    let backup = outcome.backup_dir.as_ref().map_or_else(
+                        || text(app.language, MessageKey::BackupNotCreated, []),
+                        |path| {
+                            text(
+                                app.language,
+                                MessageKey::ActivityBackup,
+                                [("backup", path.display().to_string())],
+                            )
+                        },
+                    );
+                    let finished = text(
+                        app.language,
+                        MessageKey::ActivitySyncFinished,
+                        [("warnings", warnings.to_string())],
+                    );
                     let status = format!(
-                        "{} · {}",
+                        "{} · {} · {}",
                         text(
                             app.language,
                             MessageKey::ActivitySnapshot,
                             [("snapshot", short_id(&outcome.snapshot_id).to_string())],
                         ),
-                        text(
-                            app.language,
-                            MessageKey::ActivitySyncFinished,
-                            [("warnings", warnings.to_string())],
-                        )
+                        finished,
+                        backup
                     );
                     *app = reload_app(paths, std::mem::replace(app, empty_app(app.language)))?;
                     if source
@@ -482,11 +494,7 @@ fn handle_message(
                         } else {
                             ActivityStatus::Warning
                         },
-                        text(
-                            app.language,
-                            MessageKey::ActivitySyncFinished,
-                            [("warnings", warnings.to_string())],
-                        ),
+                        format!("{finished} · {backup}"),
                     );
                 }
                 Err(error) => {
@@ -767,7 +775,7 @@ mod tests {
                 result: Ok(super::super::sync::SyncOutcome {
                     source_name: "home".to_string(),
                     snapshot_id: "abcdef1234567890".to_string(),
-                    backup_dir: paths.backups_dir.join("backup"),
+                    backup_dir: Some(paths.backups_dir.join("backup")),
                     projection: crate::agent::ProjectionReport::default(),
                     duration: Duration::from_secs(1),
                 }),
@@ -780,10 +788,55 @@ mod tests {
 
         assert!(cancel.is_none());
         assert!(started.is_none());
+        let expected = format!(
+            "✓ Snapshot abcdef123456 · Sync finished with 0 warning(s). · Backup: {}",
+            paths.backups_dir.join("backup").display()
+        );
+        assert_eq!(app.sources[0].status.as_deref(), Some(expected.as_str()));
+    }
+
+    #[test]
+    fn sync_completion_shows_when_backup_creation_was_disabled() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let synced_source = app.sources[0].config.clone();
+        app.progress.active = true;
+        let mut cancel = Some(CancellationToken::new());
+        let mut active_source_test = false;
+        let mut started = Some(Instant::now());
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SyncFinished {
+                source_name: "home".to_string(),
+                source: Some(synced_source),
+                result: Ok(super::super::sync::SyncOutcome {
+                    source_name: "home".to_string(),
+                    snapshot_id: "abcdef1234567890".to_string(),
+                    backup_dir: None,
+                    projection: crate::agent::ProjectionReport::default(),
+                    duration: Duration::from_secs(1),
+                }),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
         assert_eq!(
             app.sources[0].status.as_deref(),
-            Some("✓ Snapshot abcdef123456 · Sync finished with 0 warning(s).")
+            Some(
+                "✓ Snapshot abcdef123456 · Sync finished with 0 warning(s). · Backup disabled; not created"
+            )
         );
+        assert!(app
+            .progress
+            .log
+            .iter()
+            .any(|entry| entry.text.contains("Backup disabled; not created")));
     }
 
     #[test]
@@ -845,7 +898,7 @@ mod tests {
                 result: Ok(super::super::sync::SyncOutcome {
                     source_name: "home".to_string(),
                     snapshot_id: "abcdef1234567890".to_string(),
-                    backup_dir: paths.backups_dir.join("backup"),
+                    backup_dir: Some(paths.backups_dir.join("backup")),
                     projection: crate::agent::ProjectionReport::default(),
                     duration: Duration::from_secs(1),
                 }),

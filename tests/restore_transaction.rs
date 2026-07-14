@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
+use cc_switchy::config::BackupConfig;
 use cc_switchy::progress::NoopProgress;
 use cc_switchy::remote::protocol::{
     compute_snapshot_id, sha256_hex, ArtifactMeta, RemoteLayout, SyncManifest, DB_COMPAT_VERSION,
@@ -182,9 +183,13 @@ fn invalid_sql_is_rejected_without_creating_cc_switch_state() {
     let snapshot = valid_snapshot(staging.path(), b"DROP TABLE providers;", &zip);
     let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
 
-    let error = RestoreService::new(paths.clone(), Arc::new(NoopProgress))
-        .apply(snapshot, &lock, "fixture")
-        .expect_err("invalid SQL must fail");
+    let error = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig::default(),
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect_err("invalid SQL must fail");
 
     assert!(matches!(error, AppError::InvalidSqlExport));
     assert!(!paths.cc_switch_dir.exists());
@@ -356,18 +361,23 @@ fn valid_snapshot_creates_durable_backup_and_restores_database_and_skills() {
     let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
     let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
 
-    let outcome = RestoreService::new(paths.clone(), Arc::new(NoopProgress))
-        .apply(snapshot, &lock, "fixture")
-        .expect("restore");
+    let outcome = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig::default(),
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect("restore");
 
     assert_eq!(
         fs::read_to_string(paths.cc_switch_dir.join("skills/demo/SKILL.md"))
             .expect("restored skill"),
         "# Demo"
     );
-    assert!(outcome.backup_dir.join("metadata.json").exists());
-    assert!(outcome.backup_dir.join("cc-switch.db").exists());
-    assert!(outcome.backup_dir.join("skills/old/SKILL.md").exists());
+    let backup_dir = outcome.backup_dir.expect("backup directory");
+    assert!(backup_dir.join("metadata.json").exists());
+    assert!(backup_dir.join("cc-switch.db").exists());
+    assert!(backup_dir.join("skills/old/SKILL.md").exists());
     let connection =
         Connection::open(paths.cc_switch_dir.join("cc-switch.db")).expect("restored database");
     assert_eq!(
@@ -390,6 +400,36 @@ fn valid_snapshot_creates_durable_backup_and_restores_database_and_skills() {
 }
 
 #[test]
+fn disabled_backup_restores_without_creating_a_backup_directory() {
+    let home = TempDir::new().expect("home");
+    let staging = TempDir::new().expect("staging");
+    let paths = AppPaths::from_home(home.path());
+    seed_existing_state(&paths);
+    let zip = create_skills_zip(&staging);
+    let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
+    let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
+
+    let outcome = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig {
+            enabled: false,
+            max_count: 10,
+        },
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect("restore without backup");
+
+    assert_eq!(outcome.backup_dir, None);
+    assert!(!paths.backups_dir.exists());
+    assert_eq!(
+        fs::read_to_string(paths.cc_switch_dir.join("skills/demo/SKILL.md"))
+            .expect("restored skill"),
+        "# Demo"
+    );
+}
+
+#[test]
 fn local_unified_skills_setting_selects_agents_ssot() {
     let home = TempDir::new().expect("home");
     let staging = TempDir::new().expect("staging");
@@ -407,9 +447,13 @@ fn local_unified_skills_setting_selects_agents_ssot() {
     let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
     let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
 
-    let outcome = RestoreService::new(paths.clone(), Arc::new(NoopProgress))
-        .apply(snapshot, &lock, "fixture")
-        .expect("restore unified");
+    let outcome = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig::default(),
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect("restore unified");
 
     assert_eq!(outcome.skills_path, paths.home.join(".agents/skills"));
     assert_eq!(
@@ -446,15 +490,105 @@ fn database_replacement_failure_rolls_skills_back() {
     let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
     let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
 
-    assert!(RestoreService::new(paths.clone(), Arc::new(NoopProgress))
-        .apply(snapshot, &lock, "fixture")
-        .is_err());
+    assert!(RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig::default(),
+    )
+    .apply(snapshot, &lock, "fixture")
+    .is_err());
     assert_eq!(
         fs::read_to_string(paths.cc_switch_dir.join("skills/old/SKILL.md"))
             .expect("rolled back skill"),
         "# Old"
     );
     fs::set_permissions(&db_path, fs::Permissions::from_mode(0o600)).expect("restore permissions");
+}
+
+#[cfg(unix)]
+#[test]
+fn disabled_backup_failure_reports_that_rollback_is_unavailable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = TempDir::new().expect("home");
+    let staging = TempDir::new().expect("staging");
+    let paths = AppPaths::from_home(home.path());
+    seed_existing_state(&paths);
+    let db_path = paths.cc_switch_dir.join("cc-switch.db");
+    fs::set_permissions(&db_path, fs::Permissions::from_mode(0o444)).expect("readonly database");
+    let zip = create_skills_zip(&staging);
+    let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
+    let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
+
+    let error = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig {
+            enabled: false,
+            max_count: 10,
+        },
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect_err("database replacement must fail");
+
+    assert!(error
+        .to_string()
+        .contains("rollback unavailable because backups are disabled"));
+    assert!(!paths.backups_dir.exists());
+    fs::set_permissions(&db_path, fs::Permissions::from_mode(0o600)).expect("restore permissions");
+}
+
+#[cfg(unix)]
+#[test]
+fn retention_cleanup_failure_stops_before_live_state_changes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let home = TempDir::new().expect("home");
+    let staging = TempDir::new().expect("staging");
+    let paths = AppPaths::from_home(home.path());
+    seed_existing_state(&paths);
+    fs::create_dir_all(&paths.backups_dir).expect("backups directory");
+    let blocked = paths.backups_dir.join("20260714T010000.000000000Z");
+    fs::create_dir(&blocked).expect("blocked backup");
+    fs::write(
+        blocked.join("metadata.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "createdAt": "2026-07-14T01:00:00Z",
+            "source": "home",
+            "snapshotId": "old",
+            "originalDatabase": "/tmp/cc-switch.db",
+            "originalSkills": "/tmp/skills",
+            "databaseExisted": true,
+            "skillsExisted": true
+        }))
+        .expect("metadata bytes"),
+    )
+    .expect("metadata file");
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000))
+        .expect("block retention inspection");
+    let zip = create_skills_zip(&staging);
+    let snapshot = valid_snapshot(staging.path(), FIXTURE_SQL.as_bytes(), &zip);
+    let lock = SyncLockGuard::acquire(&paths.lock_file).expect("lock");
+
+    let error = RestoreService::new(
+        paths.clone(),
+        Arc::new(NoopProgress),
+        BackupConfig {
+            enabled: true,
+            max_count: 1,
+        },
+    )
+    .apply(snapshot, &lock, "fixture")
+    .expect_err("cleanup must fail");
+
+    assert!(error.to_string().contains(&blocked.display().to_string()));
+    assert_eq!(
+        fs::read_to_string(paths.cc_switch_dir.join("skills/old/SKILL.md"))
+            .expect("unchanged live skill"),
+        "# Old"
+    );
+    assert!(!paths.cc_switch_dir.join("skills/demo/SKILL.md").exists());
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore permissions");
 }
 
 fn patch_declared_uncompressed_size(bytes: &mut [u8], size: u32) {

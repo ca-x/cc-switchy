@@ -28,7 +28,7 @@ pub struct SyncRequest {
 pub struct SyncOutcome {
     pub source_name: String,
     pub snapshot_id: String,
-    pub backup_dir: PathBuf,
+    pub backup_dir: Option<PathBuf>,
     pub projection: ProjectionReport,
     pub duration: Duration,
 }
@@ -69,6 +69,7 @@ impl SyncService {
             .catalog
             .resolve(request.source_name.as_deref())?
             .clone();
+        let backup_config = self.catalog.config().backup.clone();
         let source_name = source.name.clone();
         self.progress.emit(ProgressEvent::Locking);
         let lock = SyncLockGuard::acquire(&self.paths.lock_file)?;
@@ -88,7 +89,11 @@ impl SyncService {
         ensure_not_cancelled(&self.cancellation)?;
         let snapshot_id = snapshot.manifest.snapshot_id().to_string();
 
-        let restore = RestoreService::new(self.paths.clone(), Arc::clone(&self.progress));
+        let restore = RestoreService::new(
+            self.paths.clone(),
+            Arc::clone(&self.progress),
+            backup_config,
+        );
         let restored = restore.apply(snapshot, &lock, &source_name)?;
 
         let settings_path = self.paths.cc_switch_dir.join("settings.json");
@@ -117,7 +122,7 @@ impl SyncService {
             &self.paths.state_file,
             &source_name,
             &snapshot_id,
-            &restored.backup_dir,
+            restored.backup_dir.as_deref(),
             duration,
             projection.warnings.len(),
         )?;
@@ -334,8 +339,11 @@ fn render_outcome(translator: &Translator, outcome: &SyncOutcome) -> String {
     );
     args.0
         .insert("warnings", outcome.projection.warnings.len().to_string());
-    args.0
-        .insert("backup", outcome.backup_dir.display().to_string());
+    let backup = outcome.backup_dir.as_ref().map_or_else(
+        || translator.text(MessageKey::BackupNotCreated, &MessageArgs::default()),
+        |path| path.display().to_string(),
+    );
+    args.0.insert("backup", backup);
     translator.text(MessageKey::SyncSummary, &args)
 }
 
@@ -354,7 +362,7 @@ struct LastSyncState<'a> {
     snapshot_id: &'a str,
     completed_at: String,
     duration_ms: u128,
-    backup_dir: String,
+    backup_dir: Option<String>,
     warnings: usize,
 }
 
@@ -362,7 +370,7 @@ fn persist_state(
     path: &Path,
     source: &str,
     snapshot_id: &str,
-    backup_dir: &Path,
+    backup_dir: Option<&Path>,
     duration: Duration,
     warnings: usize,
 ) -> Result<(), AppError> {
@@ -375,7 +383,7 @@ fn persist_state(
         snapshot_id,
         completed_at: Utc::now().to_rfc3339(),
         duration_ms: duration.as_millis(),
-        backup_dir: backup_dir.display().to_string(),
+        backup_dir: backup_dir.map(|path| path.display().to_string()),
         warnings,
     };
     let mut root = fs::read(path)

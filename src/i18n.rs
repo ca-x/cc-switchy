@@ -87,6 +87,7 @@ pub enum MessageKey {
     ProgressWarning,
     ProgressCompleted,
     SyncSummary,
+    BackupNotCreated,
     ErrorCancelled,
     ErrorSyncLocked,
     TuiProviders,
@@ -142,6 +143,17 @@ pub enum MessageKey {
     WizardLanguage,
     WizardConfirmHint,
     WizardAutoLanguage,
+    WizardBackupSettings,
+    WizardBackupCreation,
+    WizardBackupEnabled,
+    WizardBackupDisabled,
+    WizardBackupMaxCount,
+    WizardBackupUnlimited,
+    WizardBackupHint,
+    WizardBackupRollbackWarning,
+    WizardConfirmDisableBackup,
+    WizardFooterBackup,
+    WizardBackupInvalidCount,
     FieldName,
     FieldBaseUrl,
     FieldUsername,
@@ -162,6 +174,7 @@ pub enum MessageKey {
     ActivityReapplied,
     ActivityRetryComplete,
     ActivitySyncFinished,
+    ActivityBackup,
     ActivitySnapshot,
     ActivityConnectedEmpty,
     ErrorManifestTooLarge,
@@ -287,6 +300,7 @@ impl Translator {
                     backup()
                 );
             }
+            (Language::ZhCn, MessageKey::BackupNotCreated) => "备份已关闭；未创建",
             (Language::ZhCn, MessageKey::ErrorCancelled) => "同步已取消",
             (Language::ZhCn, MessageKey::ErrorSyncLocked) => "另一个同步或恢复操作正在运行",
             (Language::ZhCn, MessageKey::TuiProviders) => "供应商",
@@ -338,7 +352,7 @@ impl Translator {
                 "还没有同步源 · 按 a 添加 WebDAV 或 S3"
             }
             (Language::ZhCn, MessageKey::WizardFooterList) => {
-                "a 添加  e 编辑  Enter 详情  x 删除  t 测试  m 默认  L 语言  q 退出"
+                "a 添加  e 编辑  Enter 详情  x 删除  t 测试  m 默认  b 备份  L 语言  q 退出"
             }
             (Language::ZhCn, MessageKey::WizardFooterForm) => {
                 "Esc 放弃  Ctrl+C 退出  Tab/Shift+Tab 字段  Enter 下一项/保存  直接输入"
@@ -360,6 +374,27 @@ impl Translator {
             (Language::ZhCn, MessageKey::WizardLanguage) => "语言",
             (Language::ZhCn, MessageKey::WizardConfirmHint) => "Enter 确认 · Esc 取消",
             (Language::ZhCn, MessageKey::WizardAutoLanguage) => "跟随系统",
+            (Language::ZhCn, MessageKey::WizardBackupSettings) => "备份设置",
+            (Language::ZhCn, MessageKey::WizardBackupCreation) => "创建备份",
+            (Language::ZhCn, MessageKey::WizardBackupEnabled) => "开启",
+            (Language::ZhCn, MessageKey::WizardBackupDisabled) => "关闭",
+            (Language::ZhCn, MessageKey::WizardBackupMaxCount) => "最多保留",
+            (Language::ZhCn, MessageKey::WizardBackupUnlimited) => "不限数量",
+            (Language::ZhCn, MessageKey::WizardBackupHint) => {
+                "0 表示不限数量；正数会在下次开启备份的同步时只保留最新数量。"
+            }
+            (Language::ZhCn, MessageKey::WizardBackupRollbackWarning) => {
+                "关闭后不会创建备份，恢复失败时也无法回滚。"
+            }
+            (Language::ZhCn, MessageKey::WizardConfirmDisableBackup) => {
+                "关闭备份后，本次及后续同步不会创建本地备份；恢复失败时无法回滚。确定关闭？"
+            }
+            (Language::ZhCn, MessageKey::WizardFooterBackup) => {
+                "↑↓/Tab 字段  空格 开关  数字 数量  Enter 保存  Esc 返回  Ctrl+C 退出"
+            }
+            (Language::ZhCn, MessageKey::WizardBackupInvalidCount) => {
+                "请输入 0 或更大的整数"
+            }
             (Language::ZhCn, MessageKey::FieldName) => "名称",
             (Language::ZhCn, MessageKey::FieldBaseUrl) => "基础 URL",
             (Language::ZhCn, MessageKey::FieldUsername) => "用户名",
@@ -389,6 +424,9 @@ impl Translator {
             (Language::ZhCn, MessageKey::ActivityRetryComplete) => "投影重试完成。",
             (Language::ZhCn, MessageKey::ActivitySyncFinished) => {
                 return format!("同步完成，警告 {} 项。", warnings());
+            }
+            (Language::ZhCn, MessageKey::ActivityBackup) => {
+                return format!("备份：{}", backup());
             }
             (Language::ZhCn, MessageKey::ActivitySnapshot) => {
                 return format!("✓ 快照 {}", snapshot());
@@ -554,6 +592,9 @@ impl Translator {
                     backup()
                 );
             }
+            (Language::Auto | Language::EnUs, MessageKey::BackupNotCreated) => {
+                "Backup disabled; not created"
+            }
             (Language::Auto | Language::EnUs, MessageKey::ErrorCancelled) => {
                 "Synchronization was cancelled"
             }
@@ -623,7 +664,7 @@ impl Translator {
                 "No sources yet · press a to add WebDAV or S3"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterList) => {
-                "a add  e edit  Enter details  x delete  t test  m default  L language  q exit"
+                "a add  e edit  Enter details  x delete  t test  m default  b backup  L language  q exit"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardFooterForm) => {
                 "Esc discard  Ctrl+C exit  Tab/Shift+Tab field  Enter next/save  type to edit"
@@ -657,6 +698,31 @@ impl Translator {
                 "Enter confirm · Esc cancel"
             }
             (Language::Auto | Language::EnUs, MessageKey::WizardAutoLanguage) => "Auto",
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupSettings) => {
+                "Backup Settings"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupCreation) => {
+                "Create backups"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupEnabled) => "Enabled",
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupDisabled) => "Disabled",
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupMaxCount) => "Maximum kept",
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupUnlimited) => "Unlimited",
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupHint) => {
+                "0 keeps unlimited backups; a positive value keeps the newest count on the next enabled sync."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupRollbackWarning) => {
+                "Disabling backups also makes rollback unavailable after a restore failure."
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardConfirmDisableBackup) => {
+                "Disabling backups creates no local backup for this or future syncs, so restore failures cannot roll back. Disable backups?"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardFooterBackup) => {
+                "↑↓/Tab field  Space toggle  digits count  Enter save  Esc back  Ctrl+C exit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::WizardBackupInvalidCount) => {
+                "Enter 0 or a larger whole number"
+            }
             (Language::Auto | Language::EnUs, MessageKey::FieldName) => "Name",
             (Language::Auto | Language::EnUs, MessageKey::FieldBaseUrl) => "Base URL",
             (Language::Auto | Language::EnUs, MessageKey::FieldUsername) => "Username",
@@ -694,6 +760,9 @@ impl Translator {
             }
             (Language::Auto | Language::EnUs, MessageKey::ActivitySyncFinished) => {
                 return format!("Sync finished with {} warning(s).", warnings());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::ActivityBackup) => {
+                return format!("Backup: {}", backup());
             }
             (Language::Auto | Language::EnUs, MessageKey::ActivitySnapshot) => {
                 return format!("✓ Snapshot {}", snapshot());

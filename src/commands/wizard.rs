@@ -7,7 +7,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use super::tui::{CrosstermTerminal, TerminalGuard};
-use crate::config::{ConfigStore, SourceCatalog, SourceConfig};
+use crate::config::{BackupConfig, ConfigStore, SourceCatalog, SourceConfig};
 use crate::progress::NoopProgress;
 use crate::remote::RemoteClient;
 use crate::tui::wizard::{self, WizardCommand};
@@ -27,10 +27,11 @@ pub async fn run_embedded(
     language: Language,
 ) -> Result<(), AppError> {
     let catalog = SourceCatalog::load(ConfigStore::new(paths.config_file.clone()))?;
-    let mut state = WizardState::new(
+    let mut state = WizardState::new_with_backup(
         language,
         catalog.config().sources.clone(),
         catalog.config().default_source.clone(),
+        catalog.config().backup.clone(),
     );
     let mut dirty = true;
 
@@ -84,6 +85,13 @@ pub async fn run_embedded(
                     }
                     finish_catalog_mutation(&mut state, result, false);
                 }
+                WizardCommand::ChangeBackup(backup) => {
+                    let result = mutate_backup_config(&paths, backup);
+                    match result {
+                        Ok(backup) => state.backup_mutation_succeeded(backup),
+                        Err(error) => state.backup_mutation_failed(error.to_string()),
+                    }
+                }
                 WizardCommand::Test(name) => {
                     let result = test_source(&paths, &name).await;
                     match result {
@@ -94,6 +102,12 @@ pub async fn run_embedded(
             }
         }
     }
+}
+
+fn mutate_backup_config(paths: &AppPaths, backup: BackupConfig) -> Result<BackupConfig, AppError> {
+    let mut catalog = SourceCatalog::load(ConfigStore::new(paths.config_file.clone()))?;
+    catalog.set_backup_config(backup)?;
+    Ok(catalog.config().backup.clone())
 }
 
 fn mutate_catalog(

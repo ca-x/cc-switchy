@@ -3,10 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use rusqlite::backup::Backup;
 use rusqlite::{Connection, OpenFlags};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::paths::AppPaths;
 use crate::AppError;
@@ -21,12 +21,12 @@ pub struct LocalBackup {
     skills_existed: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BackupMetadata<'a> {
+struct BackupMetadata {
     created_at: String,
-    source: &'a str,
-    snapshot_id: &'a str,
+    source: String,
+    snapshot_id: String,
     original_database: String,
     original_skills: String,
     database_existed: bool,
@@ -42,6 +42,7 @@ impl LocalBackup {
     ) -> Result<Self, AppError> {
         fs::create_dir_all(&paths.backups_dir)
             .map_err(|error| AppError::io(&paths.backups_dir, error))?;
+        require_real_backup_root(&paths.backups_dir)?;
         set_private_directory(&paths.backups_dir)?;
         let backup_dir = unique_backup_dir(&paths.backups_dir)?;
         fs::create_dir(&backup_dir).map_err(|error| AppError::io(&backup_dir, error))?;
@@ -68,8 +69,8 @@ impl LocalBackup {
 
         let metadata = BackupMetadata {
             created_at: Utc::now().to_rfc3339(),
-            source,
-            snapshot_id,
+            source: source.to_string(),
+            snapshot_id: snapshot_id.to_string(),
             original_database: original_database.display().to_string(),
             original_skills: skills_path.display().to_string(),
             database_existed,
@@ -88,6 +89,13 @@ impl LocalBackup {
             database_existed,
             skills_existed,
         })
+    }
+
+    pub fn enforce_retention(&self, max_count: usize) -> Result<(), AppError> {
+        let root = self.backup_dir.parent().ok_or_else(|| {
+            AppError::Restore("backup directory has no parent directory".to_string())
+        })?;
+        prune_recognized_backups(root, &self.backup_dir, max_count)
     }
 
     pub fn restore_skills(&self) -> Result<(), AppError> {
@@ -111,6 +119,109 @@ impl LocalBackup {
             remove_path_if_exists(&self.original_database)
         }
     }
+}
+
+fn require_real_backup_root(path: &Path) -> Result<(), AppError> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| AppError::io(path, error))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(AppError::Restore(format!(
+            "backup root must be a real directory: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+struct RecognizedBackup {
+    path: PathBuf,
+    name: String,
+    created_at: DateTime<chrono::FixedOffset>,
+}
+
+fn prune_recognized_backups(
+    root: &Path,
+    current_backup: &Path,
+    max_count: usize,
+) -> Result<(), AppError> {
+    if max_count == 0 {
+        return Ok(());
+    }
+
+    let mut recognized = Vec::new();
+    for entry in fs::read_dir(root).map_err(|error| AppError::io(root, error))? {
+        let entry = entry.map_err(|error| AppError::io(root, error))?;
+        let path = entry.path();
+        let metadata = fs::symlink_metadata(&path).map_err(|error| AppError::io(&path, error))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if !is_backup_directory_name(&name) {
+            continue;
+        }
+
+        let metadata_path = path.join("metadata.json");
+        let file_metadata = match fs::symlink_metadata(&metadata_path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(AppError::io(&metadata_path, error)),
+        };
+        if file_metadata.file_type().is_symlink() || !file_metadata.is_file() {
+            continue;
+        }
+        let bytes =
+            fs::read(&metadata_path).map_err(|error| AppError::io(&metadata_path, error))?;
+        let Ok(metadata) = serde_json::from_slice::<BackupMetadata>(&bytes) else {
+            continue;
+        };
+        let Ok(created_at) = DateTime::parse_from_rfc3339(&metadata.created_at) else {
+            continue;
+        };
+        recognized.push(RecognizedBackup {
+            path,
+            name,
+            created_at,
+        });
+    }
+
+    let remove_count = recognized.len().saturating_sub(max_count);
+    if remove_count == 0 {
+        return Ok(());
+    }
+    recognized.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    for backup in recognized
+        .into_iter()
+        .filter(|backup| backup.path != current_backup)
+        .take(remove_count)
+    {
+        fs::remove_dir_all(&backup.path).map_err(|error| AppError::io(&backup.path, error))?;
+    }
+    Ok(())
+}
+
+fn is_backup_directory_name(name: &str) -> bool {
+    const TIMESTAMP_LENGTH: usize = 26;
+
+    if !name.is_ascii() || name.len() < TIMESTAMP_LENGTH {
+        return false;
+    }
+    let (timestamp, suffix) = name.split_at(TIMESTAMP_LENGTH);
+    if NaiveDateTime::parse_from_str(timestamp, "%Y%m%dT%H%M%S%.9fZ").is_err() {
+        return false;
+    }
+    if suffix.is_empty() {
+        return true;
+    }
+    suffix
+        .strip_prefix('-')
+        .and_then(|value| value.parse::<u16>().ok())
+        .is_some_and(|value| (1..1000).contains(&value))
 }
 
 pub(crate) fn copy_tree_preserve_links(source: &Path, target: &Path) -> Result<(), AppError> {
@@ -281,4 +392,224 @@ fn set_private_file(_path: &Path) -> Result<(), AppError> {
 
 fn database_error(error: rusqlite::Error) -> AppError {
     AppError::Database(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn retention_keeps_current_and_newest_recognized_backups() {
+        let root = TempDir::new().expect("backup root");
+        let oldest = completed_backup(
+            root.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let middle = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+        let current = completed_backup(
+            root.path(),
+            "20260714T030000.000000000Z",
+            "2026-07-14T03:00:00Z",
+        );
+
+        prune_recognized_backups(root.path(), &current, 2).expect("prune backups");
+
+        assert!(!oldest.exists());
+        assert!(middle.is_dir());
+        assert!(current.is_dir());
+    }
+
+    #[test]
+    fn retention_zero_leaves_every_backup_untouched() {
+        let root = TempDir::new().expect("backup root");
+        let oldest = completed_backup(
+            root.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let current = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+
+        prune_recognized_backups(root.path(), &current, 0).expect("unlimited retention");
+
+        assert!(oldest.is_dir());
+        assert!(current.is_dir());
+    }
+
+    #[test]
+    fn retention_orders_by_metadata_time_then_directory_name() {
+        let root = TempDir::new().expect("backup root");
+        let later_named_but_older = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let earlier_named_but_newer = completed_backup(
+            root.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+        let current = completed_backup(
+            root.path(),
+            "20260714T030000.000000000Z-1",
+            "2026-07-14T03:00:00Z",
+        );
+
+        prune_recognized_backups(root.path(), &current, 2).expect("prune backups");
+
+        assert!(!later_named_but_older.exists());
+        assert!(earlier_named_but_newer.is_dir());
+        assert!(current.is_dir());
+    }
+
+    #[test]
+    fn retention_preserves_unknown_entries_files_and_invalid_metadata() {
+        let root = TempDir::new().expect("backup root");
+        let recognized = completed_backup(
+            root.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let current = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+        let malformed_name = root.path().join("manual-backup");
+        fs::create_dir(&malformed_name).expect("malformed directory");
+        let invalid_metadata = root.path().join("20260714T040000.000000000Z");
+        fs::create_dir(&invalid_metadata).expect("invalid metadata directory");
+        fs::write(invalid_metadata.join("metadata.json"), b"not json").expect("invalid metadata");
+        let ordinary_file = root.path().join("20260714T050000.000000000Z");
+        fs::write(&ordinary_file, b"not a directory").expect("ordinary file");
+
+        prune_recognized_backups(root.path(), &current, 1).expect("prune backups");
+
+        assert!(!recognized.exists());
+        assert!(current.is_dir());
+        assert!(malformed_name.is_dir());
+        assert!(invalid_metadata.is_dir());
+        assert!(ordinary_file.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retention_preserves_symbolic_link_entries() {
+        use std::os::unix::fs::symlink;
+
+        let root = TempDir::new().expect("backup root");
+        let external = TempDir::new().expect("external backup");
+        completed_backup(
+            external.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let link = root.path().join("20260714T010000.000000000Z");
+        symlink(external.path().join("20260714T010000.000000000Z"), &link).expect("backup symlink");
+        let current = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+
+        prune_recognized_backups(root.path(), &current, 1).expect("prune backups");
+
+        assert!(fs::symlink_metadata(&link)
+            .expect("link metadata")
+            .file_type()
+            .is_symlink());
+        assert!(current.is_dir());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retention_reports_deletion_errors() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = TempDir::new().expect("backup root");
+        let oldest = completed_backup(
+            root.path(),
+            "20260714T010000.000000000Z",
+            "2026-07-14T01:00:00Z",
+        );
+        let current = completed_backup(
+            root.path(),
+            "20260714T020000.000000000Z",
+            "2026-07-14T02:00:00Z",
+        );
+        fs::set_permissions(&oldest, fs::Permissions::from_mode(0o000))
+            .expect("block deletion traversal");
+
+        let error = prune_recognized_backups(root.path(), &current, 1)
+            .expect_err("unreadable backup must stop cleanup");
+
+        assert!(error.to_string().contains(&oldest.display().to_string()));
+        assert!(current.is_dir());
+        fs::set_permissions(&oldest, fs::Permissions::from_mode(0o700))
+            .expect("restore permissions");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn backup_creation_rejects_a_symbolic_link_root() {
+        use std::os::unix::fs::symlink;
+
+        let home = TempDir::new().expect("home");
+        let external = TempDir::new().expect("external root");
+        let paths = AppPaths::from_home(home.path());
+        fs::create_dir_all(&paths.app_dir).expect("application directory");
+        symlink(external.path(), &paths.backups_dir).expect("backup root symlink");
+
+        let error = match LocalBackup::create(
+            &paths,
+            &paths.cc_switch_dir.join("skills"),
+            "home",
+            "snapshot",
+        ) {
+            Err(error) => error,
+            Ok(_) => panic!("symbolic link root was accepted"),
+        };
+
+        assert!(error
+            .to_string()
+            .contains("backup root must be a real directory"));
+        assert_eq!(
+            fs::read_dir(external.path())
+                .expect("external directory")
+                .count(),
+            0
+        );
+    }
+
+    fn completed_backup(root: &Path, name: &str, created_at: &str) -> PathBuf {
+        let path = root.join(name);
+        fs::create_dir(&path).expect("backup directory");
+        let metadata = serde_json::json!({
+            "createdAt": created_at,
+            "source": "home",
+            "snapshotId": "snapshot",
+            "originalDatabase": "/tmp/cc-switch.db",
+            "originalSkills": "/tmp/skills",
+            "databaseExisted": true,
+            "skillsExisted": true
+        });
+        fs::write(
+            path.join("metadata.json"),
+            serde_json::to_vec_pretty(&metadata).expect("metadata bytes"),
+        )
+        .expect("metadata file");
+        path
+    }
 }

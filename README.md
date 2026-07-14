@@ -71,6 +71,7 @@ cc-switchy --lang en
 - 表单内直接输入文字，`Tab/Shift+Tab` 切换字段
 - `Enter` 查看详情、进入下一字段或保存
 - `e` 编辑，`x` 删除，`t` 测试连接，`m` 设置默认源
+- `b` 打开备份设置；可开关备份并设置全局保留数量，`0` 表示不限数量
 - `L` 切换语言
 - `Esc` 放弃当前表单或返回上一层
 - `q` 在非表单界面退出，`Ctrl+C` 可从任意向导界面退出
@@ -116,6 +117,10 @@ version = 1
 language = "auto"
 default_source = "home-webdav"
 
+[backup]
+enabled = true
+max_count = 10
+
 [[sources]]
 name = "home-webdav"
 type = "webdav"
@@ -148,10 +153,14 @@ secret_access_key = "replace-me"
 
 显式同步每次都重新获取 manifest 和两个制品；云端所选快照是本次恢复的权威
 来源，即使本地数据更新也不会做双向合并。流程会先校验协议、大小、SHA-256、
-ZIP 路径和 SQL，再创建本地备份并替换数据库与 Skills。
+ZIP 路径和 SQL。备份开启时，程序会先创建完整本地备份、执行保留清理，再替换
+数据库与 Skills。
 
-备份保存在 `~/.cc-switchy/backups/<timestamp>/`。数据库替换失败时会回滚 Skills；
-任何 Agent 投影失败会成为警告，其他 Agent 继续应用。
+备份保存在 `~/.cc-switchy/backups/<timestamp>/`，默认开启并全局保留最新 10 个。
+`max_count = 0` 表示不限数量；正数限制会在下一次开启备份的同步中清理最旧的已
+识别备份。未知目录、文件和符号链接不会自动删除。`enabled = false` 时完全不创建
+备份，因此恢复失败时也无法回滚；向导保存此设置前会再次确认。备份开启时，
+数据库替换失败会回滚 Skills；任何 Agent 投影失败会成为警告，其他 Agent 继续应用。
 
 - Exit code `0`：恢复及所有本地投影成功。
 - Exit code `1`：配置、网络、校验、恢复或回滚失败。
@@ -217,9 +226,10 @@ comparison, merge, upload, remote delete, or conflict resolution.
 
 Wizard keys: printable characters enter text inside forms, `Tab/Shift+Tab`
 changes fields, `Enter` inspects/advances/saves, `a` adds, `e` edits, `x`
-deletes, `t` tests, `m` makes the selected source default, and `L` changes
-language. `Esc` discards a form or goes back, `q` exits outside forms, and
-`Ctrl+C` exits from every Wizard screen.
+deletes, `t` tests, `m` makes the selected source default, `b` opens the global
+backup settings, and `L` changes language. Backup settings provide an explicit
+creation switch and retention count; `0` means unlimited. `Esc` discards a form
+or goes back, `q` exits outside forms, and `Ctrl+C` exits from every Wizard screen.
 
 Main TUI keys: `1` Providers, `2` Skills, `3` Activity, `4` Sources,
 `j/k` or arrows to move, `Tab` to change focus, `[`/`]` to browse Agents,
@@ -233,6 +243,12 @@ Application configuration, progress state, staging, and durable backups live
 under `~/.cc-switchy`. The compatible database, device-local settings, and
 default Skills SSOT remain under `~/.cc-switch`; a configured
 `~/.agents/skills` SSOT is respected.
+
+Backups are enabled by default and the newest 10 recognized backups are kept
+globally. Set `[backup].max_count = 0` for unlimited retention. When
+`[backup].enabled = false`, synchronization creates no backup and restore
+failures cannot roll back. Positive limits are enforced during the next sync
+with backups enabled; unknown directories, files, and symbolic links are kept.
 
 - Exit code `0`: restore and all requested projections succeeded.
 - Exit code `1`: configuration, transport, validation, restore, or rollback failed.

@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use assert_cmd::Command;
 use cc_switchy::commands::{SyncRequest, SyncService};
-use cc_switchy::config::{ConfigStore, SourceCatalog, SourceConfig, SourceKind, WebDavConfig};
+use cc_switchy::config::{
+    BackupConfig, ConfigStore, SourceCatalog, SourceConfig, SourceKind, WebDavConfig,
+};
 use cc_switchy::progress::{ProgressEvent, ProgressSink};
 use cc_switchy::remote::protocol::{
     compute_snapshot_id, sha256_hex, ArtifactMeta, SyncManifest, DB_COMPAT_VERSION,
@@ -164,8 +166,8 @@ async fn consecutive_syncs_refetch_and_project_in_provider_mcp_skills_order() {
 
     assert_eq!(first.source_name, "home");
     assert_eq!(first.snapshot_id, second.snapshot_id);
-    assert!(first.backup_dir.is_dir());
-    assert!(second.backup_dir.is_dir());
+    assert!(first.backup_dir.as_ref().is_some_and(|path| path.is_dir()));
+    assert!(second.backup_dir.as_ref().is_some_and(|path| path.is_dir()));
     manifest.assert_calls(2);
     database.assert_calls(2);
     skills.assert_calls(2);
@@ -202,6 +204,88 @@ async fn consecutive_syncs_refetch_and_project_in_provider_mcp_skills_order() {
     assert!(events
         .iter()
         .any(|event| matches!(event, ProgressEvent::Completed { .. })));
+}
+
+#[tokio::test]
+async fn disabled_backup_sync_creates_no_backup_and_persists_a_null_path() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    let server = MockServer::start();
+    let (_manifest, _database, _skills) = mount_snapshot(&server);
+    let progress = Arc::new(RecordingProgress::default());
+    let mut source_catalog = catalog(&paths, [source("home", server.base_url())]);
+    source_catalog
+        .set_backup_config(BackupConfig {
+            enabled: false,
+            max_count: 10,
+        })
+        .expect("disable backup");
+    let mut service = SyncService {
+        paths: paths.clone(),
+        catalog: source_catalog,
+        progress: progress.clone(),
+        cancellation: CancellationToken::new(),
+    };
+
+    let outcome = service
+        .run(SyncRequest { source_name: None })
+        .await
+        .expect("sync without backup");
+
+    assert_eq!(outcome.backup_dir, None);
+    assert!(!paths.backups_dir.exists());
+    let state: serde_json::Value = serde_json::from_slice(
+        &fs::read(&paths.state_file).expect("persisted synchronization state"),
+    )
+    .expect("state JSON");
+    assert!(state["lastSync"]["backupDir"].is_null());
+    assert!(!progress
+        .events()
+        .iter()
+        .any(|event| matches!(event, ProgressEvent::PreparingLocalBackup)));
+}
+
+#[tokio::test]
+async fn positive_backup_limit_prunes_the_oldest_completed_backup() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    let server = MockServer::start();
+    let (_manifest, _database, _skills) = mount_snapshot(&server);
+    let mut source_catalog = catalog(&paths, [source("home", server.base_url())]);
+    source_catalog
+        .set_backup_config(BackupConfig {
+            enabled: true,
+            max_count: 1,
+        })
+        .expect("set retention");
+    let mut service = SyncService {
+        paths: paths.clone(),
+        catalog: source_catalog,
+        progress: Arc::new(RecordingProgress::default()),
+        cancellation: CancellationToken::new(),
+    };
+
+    let first = service
+        .run(SyncRequest { source_name: None })
+        .await
+        .expect("first sync")
+        .backup_dir
+        .expect("first backup");
+    let second = service
+        .run(SyncRequest { source_name: None })
+        .await
+        .expect("second sync")
+        .backup_dir
+        .expect("second backup");
+
+    assert!(!first.exists());
+    assert!(second.is_dir());
+    assert_eq!(
+        fs::read_dir(&paths.backups_dir)
+            .expect("backup directory")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -334,6 +418,35 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .stderr(predicate::str::contains(
             "Another sync or restore operation is already running",
         ));
+}
+
+#[test]
+fn redirected_cli_reports_when_backup_creation_is_disabled() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    let server = MockServer::start();
+    let (_manifest, _database, _skills) = mount_snapshot(&server);
+    let mut source_catalog = catalog(&paths, [source("home", server.base_url())]);
+    source_catalog
+        .set_backup_config(BackupConfig {
+            enabled: false,
+            max_count: 10,
+        })
+        .expect("disable backup");
+
+    let mut command = Command::cargo_bin("cc-switchy").expect("binary");
+    command
+        .env("CC_SWITCHY_TEST_HOME", home.path())
+        .env("CC_SWITCH_TEST_HOME", home.path())
+        .args(["--sync", "--lang", "en"])
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains(
+            "Backup: Backup disabled; not created",
+        ));
+
+    assert!(!paths.backups_dir.exists());
 }
 
 #[test]

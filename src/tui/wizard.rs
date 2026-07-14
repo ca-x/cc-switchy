@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::config::{S3Config, SourceConfig, SourceKind, WebDavConfig};
+use crate::config::{BackupConfig, S3Config, SourceConfig, SourceKind, WebDavConfig};
 use crate::{Language, MessageArgs, MessageKey, Translator};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +21,8 @@ pub enum WizardMode {
     ChooseReplacementDefault,
     TestConnection,
     LanguageSelect,
+    BackupSettings,
+    ConfirmDisableBackup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +35,8 @@ pub enum WizardAction {
     Test,
     MakeDefault,
     Language,
+    BackupSettings,
+    ToggleBackup,
     ChooseWebDav,
     ChooseS3,
     Input(char),
@@ -58,6 +62,7 @@ pub enum WizardCommand {
     Test(String),
     MakeDefault(String),
     ChangeLanguage(Language),
+    ChangeBackup(BackupConfig),
     Exit,
 }
 
@@ -73,6 +78,7 @@ pub struct WizardState {
     pub language: Language,
     pub sources: Vec<SourceConfig>,
     pub default_source: Option<String>,
+    pub backup: BackupConfig,
     pub selected: usize,
     pub status: Option<String>,
     type_cursor: usize,
@@ -81,6 +87,9 @@ pub struct WizardState {
     fields: Vec<FormField>,
     field: usize,
     edit_original: Option<String>,
+    backup_draft: BackupConfig,
+    backup_count: String,
+    backup_field: usize,
     commands: VecDeque<WizardCommand>,
 }
 
@@ -90,11 +99,22 @@ impl WizardState {
         sources: Vec<SourceConfig>,
         default_source: Option<String>,
     ) -> Self {
+        Self::new_with_backup(language, sources, default_source, BackupConfig::default())
+    }
+
+    pub fn new_with_backup(
+        language: Language,
+        sources: Vec<SourceConfig>,
+        default_source: Option<String>,
+        backup: BackupConfig,
+    ) -> Self {
+        let backup_count = backup.max_count.to_string();
         Self {
             mode: WizardMode::List,
             language,
             sources,
             default_source,
+            backup: backup.clone(),
             selected: 0,
             status: None,
             type_cursor: 0,
@@ -103,6 +123,9 @@ impl WizardState {
             fields: Vec::new(),
             field: 0,
             edit_original: None,
+            backup_draft: backup,
+            backup_count,
+            backup_field: 0,
             commands: VecDeque::new(),
         }
     }
@@ -139,6 +162,8 @@ impl WizardState {
             WizardMode::ConfirmDelete => self.update_delete(action),
             WizardMode::ChooseReplacementDefault => self.update_replacement(action),
             WizardMode::LanguageSelect => self.update_language(action),
+            WizardMode::BackupSettings => self.update_backup(action),
+            WizardMode::ConfirmDisableBackup => self.update_disable_confirmation(action),
         }
     }
 
@@ -167,6 +192,26 @@ impl WizardState {
         self.status = Some(
             Translator::new(self.language).text(MessageKey::WizardSaved, &MessageArgs::default()),
         );
+    }
+
+    pub fn backup_mutation_succeeded(&mut self, backup: BackupConfig) {
+        self.backup = backup.clone();
+        self.backup_count = backup.max_count.to_string();
+        self.backup_draft = backup;
+        self.backup_field = 0;
+        self.mode = WizardMode::List;
+        self.status = Some(
+            Translator::new(self.language).text(MessageKey::WizardSaved, &MessageArgs::default()),
+        );
+    }
+
+    pub fn backup_mutation_failed(&mut self, error: String) {
+        self.mode = WizardMode::BackupSettings;
+        self.status = Some(format!("× {error}"));
+    }
+
+    pub fn backup_draft(&self) -> &BackupConfig {
+        &self.backup_draft
     }
 
     pub fn form_values(&self) -> Vec<String> {
@@ -210,6 +255,12 @@ impl WizardState {
             WizardAction::Language => {
                 self.language_cursor = language_index(self.language);
                 self.mode = WizardMode::LanguageSelect;
+            }
+            WizardAction::BackupSettings => {
+                self.backup_draft = self.backup.clone();
+                self.backup_count = self.backup.max_count.to_string();
+                self.backup_field = 0;
+                self.mode = WizardMode::BackupSettings;
             }
             _ => {}
         }
@@ -335,6 +386,69 @@ impl WizardState {
         }
     }
 
+    fn update_backup(&mut self, action: WizardAction) {
+        match action {
+            WizardAction::Move(delta) => {
+                self.backup_field = move_index(self.backup_field, 2, delta);
+            }
+            WizardAction::NextField => {
+                self.backup_field = (self.backup_field + 1).min(1);
+            }
+            WizardAction::PreviousField => {
+                self.backup_field = self.backup_field.saturating_sub(1);
+            }
+            WizardAction::ToggleBackup if self.backup_field == 0 => {
+                self.backup_draft.enabled = !self.backup_draft.enabled;
+            }
+            WizardAction::Input(character)
+                if self.backup_field == 1 && character.is_ascii_digit() =>
+            {
+                self.backup_count.push(character);
+            }
+            WizardAction::Backspace if self.backup_field == 1 => {
+                self.backup_count.pop();
+            }
+            WizardAction::Confirm => {
+                let Ok(max_count) = self.backup_count.parse::<usize>() else {
+                    self.status = Some(Translator::new(self.language).text(
+                        MessageKey::WizardBackupInvalidCount,
+                        &MessageArgs::default(),
+                    ));
+                    return;
+                };
+                self.backup_draft.max_count = max_count;
+                if self.backup.enabled && !self.backup_draft.enabled {
+                    self.mode = WizardMode::ConfirmDisableBackup;
+                } else {
+                    self.commands
+                        .push_back(WizardCommand::ChangeBackup(self.backup_draft.clone()));
+                }
+            }
+            WizardAction::Cancel => {
+                self.backup_draft = self.backup.clone();
+                self.backup_count = self.backup.max_count.to_string();
+                self.backup_field = 0;
+                self.mode = WizardMode::List;
+            }
+            _ => {}
+        }
+    }
+
+    fn update_disable_confirmation(&mut self, action: WizardAction) {
+        match action {
+            WizardAction::Confirm => {
+                self.commands
+                    .push_back(WizardCommand::ChangeBackup(self.backup_draft.clone()));
+                self.mode = WizardMode::BackupSettings;
+            }
+            WizardAction::Cancel => {
+                self.backup_draft.enabled = self.backup.enabled;
+                self.mode = WizardMode::BackupSettings;
+            }
+            _ => {}
+        }
+    }
+
     fn begin_new_form(&mut self) {
         self.field = 0;
         if self.type_cursor == 0 {
@@ -421,6 +535,22 @@ pub fn action_for_key(state: &WizardState, key: KeyEvent) -> Option<WizardAction
             _ => None,
         };
     }
+    if state.mode == WizardMode::BackupSettings {
+        return match key.code {
+            KeyCode::Esc => Some(WizardAction::Cancel),
+            KeyCode::Enter => Some(WizardAction::Confirm),
+            KeyCode::Tab => Some(WizardAction::NextField),
+            KeyCode::BackTab => Some(WizardAction::PreviousField),
+            KeyCode::Up => Some(WizardAction::Move(-1)),
+            KeyCode::Down => Some(WizardAction::Move(1)),
+            KeyCode::Backspace => Some(WizardAction::Backspace),
+            KeyCode::Char(' ') => Some(WizardAction::ToggleBackup),
+            KeyCode::Char(character) if character.is_ascii_digit() => {
+                Some(WizardAction::Input(character))
+            }
+            _ => None,
+        };
+    }
     match key.code {
         KeyCode::Char('q') => Some(WizardAction::Quit),
         KeyCode::Esc => Some(WizardAction::Cancel),
@@ -432,6 +562,7 @@ pub fn action_for_key(state: &WizardState, key: KeyEvent) -> Option<WizardAction
         KeyCode::Char('x') => Some(WizardAction::Delete),
         KeyCode::Char('t') => Some(WizardAction::Test),
         KeyCode::Char('m') => Some(WizardAction::MakeDefault),
+        KeyCode::Char('b') => Some(WizardAction::BackupSettings),
         KeyCode::Char('L') => Some(WizardAction::Language),
         KeyCode::Char('w') => Some(WizardAction::ChooseWebDav),
         KeyCode::Char('s') => Some(WizardAction::ChooseS3),
@@ -519,13 +650,30 @@ pub fn render(frame: &mut Frame<'_>, state: &WizardState) {
                 state.language_cursor,
             );
         }
+        WizardMode::BackupSettings => render_backup_settings(frame, state, rows[1]),
+        WizardMode::ConfirmDisableBackup => frame.render_widget(
+            Paragraph::new(translator.text(
+                MessageKey::WizardConfirmDisableBackup,
+                &MessageArgs::default(),
+            ))
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true })
+            .block(Block::default().borders(Borders::ALL).title(format!(
+                " {} ",
+                translator.text(MessageKey::WizardConfirmHint, &MessageArgs::default())
+            ))),
+            centered(rows[1], 68, 9),
+        ),
     }
     let status = state.status.as_deref().unwrap_or("");
     let footer_key = match state.mode {
         WizardMode::List => MessageKey::WizardFooterList,
         WizardMode::EditWebDav | WizardMode::EditS3 => MessageKey::WizardFooterForm,
         WizardMode::Details | WizardMode::TestConnection => MessageKey::WizardFooterBack,
-        WizardMode::ConfirmDelete => MessageKey::WizardFooterConfirm,
+        WizardMode::ConfirmDelete | WizardMode::ConfirmDisableBackup => {
+            MessageKey::WizardFooterConfirm
+        }
+        WizardMode::BackupSettings => MessageKey::WizardFooterBackup,
         WizardMode::ChooseType
         | WizardMode::ChooseReplacementDefault
         | WizardMode::LanguageSelect => MessageKey::WizardFooterNavigate,
@@ -721,6 +869,98 @@ fn displayed_form_value(field: &FormField) -> String {
         mask(&field.value)
     } else {
         field.value.clone()
+    }
+}
+
+fn render_backup_settings(frame: &mut Frame<'_>, state: &WizardState, area: Rect) {
+    let translator = Translator::new(state.language);
+    let args = MessageArgs::default();
+    let active_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let enabled = translator.text(
+        if state.backup_draft.enabled {
+            MessageKey::WizardBackupEnabled
+        } else {
+            MessageKey::WizardBackupDisabled
+        },
+        &args,
+    );
+    let count = if state.backup_count.is_empty() {
+        "▏".to_string()
+    } else if state.backup_count == "0" {
+        format!(
+            "0 ({})",
+            translator.text(MessageKey::WizardBackupUnlimited, &args)
+        )
+    } else {
+        state.backup_count.clone()
+    };
+    let field_line = |index: usize, label: MessageKey, value: String| {
+        let active = state.backup_field == index;
+        Line::from(vec![
+            Span::styled(
+                if active { "› " } else { "  " },
+                if active {
+                    active_style
+                } else {
+                    Style::default()
+                },
+            ),
+            Span::styled(
+                format!("{:18}", translator.text(label, &args)),
+                if active {
+                    active_style
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
+            ),
+            Span::styled(
+                value,
+                if active {
+                    active_style
+                } else {
+                    Style::default()
+                },
+            ),
+        ])
+    };
+    let lines = vec![
+        field_line(0, MessageKey::WizardBackupCreation, enabled),
+        field_line(1, MessageKey::WizardBackupMaxCount, count),
+        Line::from(""),
+        Line::from(translator.text(MessageKey::WizardBackupHint, &args)),
+        Line::from(Span::styled(
+            translator.text(MessageKey::WizardBackupRollbackWarning, &args),
+            Style::default().fg(Color::Yellow),
+        )),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).wrap(Wrap { trim: true }).block(
+            Block::default().borders(Borders::ALL).title(format!(
+                " {} ",
+                translator.text(MessageKey::WizardBackupSettings, &args)
+            )),
+        ),
+        area,
+    );
+
+    if state.backup_field == 1 {
+        let cursor_prefix = format!(
+            "› {:18}{}",
+            translator.text(MessageKey::WizardBackupMaxCount, &args),
+            state.backup_count
+        );
+        let cursor_x = area
+            .x
+            .saturating_add(1)
+            .saturating_add(Line::from(cursor_prefix).width() as u16)
+            .min(area.right().saturating_sub(2));
+        let cursor_y = area
+            .y
+            .saturating_add(2)
+            .min(area.bottom().saturating_sub(2));
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
 

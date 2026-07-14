@@ -1,5 +1,5 @@
 use cc_switchy::config::{
-    ConfigStore, S3Config, SourceCatalog, SourceConfig, SourceKind, WebDavConfig,
+    BackupConfig, ConfigStore, S3Config, SourceCatalog, SourceConfig, SourceKind, WebDavConfig,
 };
 use cc_switchy::{AppPaths, Language};
 use tempfile::TempDir;
@@ -53,6 +53,65 @@ fn first_source_becomes_default_and_round_trips() {
     let loaded = SourceCatalog::load(ConfigStore::new(paths.config_file)).expect("reload");
     assert_eq!(loaded.config().sources[0].name, "home");
     assert_eq!(loaded.config().language, Language::Auto);
+}
+
+#[test]
+fn legacy_config_defaults_to_enabled_backup_with_ten_retained() {
+    let home = TempDir::new().expect("temp home");
+    let paths = AppPaths::from_home(home.path());
+    std::fs::create_dir_all(paths.config_file.parent().expect("config parent"))
+        .expect("config parent");
+    std::fs::write(&paths.config_file, "version = 1\n").expect("legacy config");
+
+    let loaded = SourceCatalog::load(ConfigStore::new(paths.config_file)).expect("load legacy");
+
+    assert_eq!(loaded.config().backup, BackupConfig::default());
+    assert!(loaded.config().backup.enabled);
+    assert_eq!(loaded.config().backup.max_count, 10);
+}
+
+#[test]
+fn backup_policy_round_trips_disabled_unlimited_and_enabled_positive() {
+    let home = TempDir::new().expect("temp home");
+    let paths = AppPaths::from_home(home.path());
+    let mut catalog = catalog(&home);
+
+    catalog
+        .set_backup_config(BackupConfig {
+            enabled: false,
+            max_count: 0,
+        })
+        .expect("disable backups");
+    let disabled =
+        SourceCatalog::load(ConfigStore::new(paths.config_file.clone())).expect("reload disabled");
+    assert_eq!(
+        disabled.config().backup,
+        BackupConfig {
+            enabled: false,
+            max_count: 0,
+        }
+    );
+
+    catalog
+        .set_backup_config(BackupConfig {
+            enabled: true,
+            max_count: 23,
+        })
+        .expect("enable backups");
+    let enabled =
+        SourceCatalog::load(ConfigStore::new(paths.config_file.clone())).expect("reload enabled");
+    assert_eq!(
+        enabled.config().backup,
+        BackupConfig {
+            enabled: true,
+            max_count: 23,
+        }
+    );
+
+    let content = std::fs::read_to_string(paths.config_file).expect("config text");
+    assert!(content.contains("[backup]"));
+    assert!(content.contains("enabled = true"));
+    assert!(content.contains("max_count = 23"));
 }
 
 #[test]

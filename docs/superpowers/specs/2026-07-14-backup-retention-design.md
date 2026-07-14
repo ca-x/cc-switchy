@@ -83,6 +83,9 @@ sync state.
 
 Cleanup operates only while holding the existing exclusive sync lock.
 
+A backup root that is itself a symbolic link is rejected before backup creation
+or cleanup.
+
 A deletion candidate must be a direct, real directory under
 `~/.cc-switchy/backups`, have a valid cc-switchy timestamp directory name, and
 contain parseable `metadata.json`. Symbolic links, files, malformed directories,

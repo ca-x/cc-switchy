@@ -11,6 +11,7 @@ use rusqlite::{Connection, OpenFlags};
 use super::archive::prepare_skills;
 use super::backup::{copy_tree_preserve_links, remove_path_if_exists, LocalBackup};
 use super::database::prepare_database;
+use crate::config::BackupConfig;
 use crate::paths::AppPaths;
 use crate::progress::{ProgressEvent, ProgressSink};
 use crate::remote::DownloadedSnapshot;
@@ -52,7 +53,7 @@ impl Drop for SyncLockGuard {
 
 #[derive(Debug)]
 pub struct RestoreOutcome {
-    pub backup_dir: PathBuf,
+    pub backup_dir: Option<PathBuf>,
     pub database_path: PathBuf,
     pub skills_path: PathBuf,
 }
@@ -60,11 +61,20 @@ pub struct RestoreOutcome {
 pub struct RestoreService {
     paths: AppPaths,
     progress: Arc<dyn ProgressSink>,
+    backup_config: BackupConfig,
 }
 
 impl RestoreService {
-    pub fn new(paths: AppPaths, progress: Arc<dyn ProgressSink>) -> Self {
-        Self { paths, progress }
+    pub fn new(
+        paths: AppPaths,
+        progress: Arc<dyn ProgressSink>,
+        backup_config: BackupConfig,
+    ) -> Self {
+        Self {
+            paths,
+            progress,
+            backup_config,
+        }
     }
 
     pub fn apply(
@@ -91,30 +101,43 @@ impl RestoreService {
             database_path.exists().then_some(database_path.as_path()),
         )?;
 
-        self.progress.emit(ProgressEvent::PreparingLocalBackup);
-        let backup = LocalBackup::create(
-            &self.paths,
-            &skills_path,
-            source,
-            snapshot.manifest.snapshot_id(),
-        )?;
+        let backup = if self.backup_config.enabled {
+            self.progress.emit(ProgressEvent::PreparingLocalBackup);
+            let backup = LocalBackup::create(
+                &self.paths,
+                &skills_path,
+                source,
+                snapshot.manifest.snapshot_id(),
+            )?;
+            backup.enforce_retention(self.backup_config.max_count)?;
+            Some(backup)
+        } else {
+            None
+        };
 
         self.progress.emit(ProgressEvent::RestoringSkills);
         if let Err(restore_error) =
             install_prepared_skills(prepared_skills.extracted_dir.path(), &skills_path)
         {
-            return match backup.restore_skills() {
-                Ok(()) => Err(restore_error),
-                Err(rollback_error) => Err(AppError::Rollback(format!(
-                    "{restore_error}; Skills rollback failed: {rollback_error}; backup: {}",
-                    backup.backup_dir.display()
-                ))),
+            return if let Some(backup) = &backup {
+                match backup.restore_skills() {
+                    Ok(()) => Err(restore_error),
+                    Err(rollback_error) => Err(AppError::Rollback(format!(
+                        "{restore_error}; Skills rollback failed: {rollback_error}; backup: {}",
+                        backup.backup_dir.display()
+                    ))),
+                }
+            } else {
+                Err(rollback_unavailable(restore_error))
             };
         }
 
         self.progress.emit(ProgressEvent::ImportingDatabase);
         if let Err(database_error) = replace_database(prepared_database.file.path(), &database_path)
         {
+            let Some(backup) = &backup else {
+                return Err(rollback_unavailable(database_error));
+            };
             let skills_rollback = backup.restore_skills();
             let database_rollback = backup.restore_database();
             if let (Ok(()), Ok(())) = (&skills_rollback, &database_rollback) {
@@ -129,11 +152,17 @@ impl RestoreService {
         }
 
         Ok(RestoreOutcome {
-            backup_dir: backup.backup_dir,
+            backup_dir: backup.map(|backup| backup.backup_dir),
             database_path,
             skills_path,
         })
     }
+}
+
+fn rollback_unavailable(error: AppError) -> AppError {
+    AppError::Restore(format!(
+        "{error}; rollback unavailable because backups are disabled"
+    ))
 }
 
 fn install_prepared_skills(source: &Path, target: &Path) -> Result<(), AppError> {

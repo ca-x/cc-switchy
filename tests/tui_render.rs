@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use cc_switchy::agent::Agent;
 use cc_switchy::config::{
-    ConfigStore, S3Config, SourceCatalog, SourceConfig, SourceKind, WebDavConfig,
+    BackupConfig, ConfigStore, S3Config, SourceCatalog, SourceConfig, SourceKind, WebDavConfig,
 };
 use cc_switchy::progress::ProgressEvent;
 use cc_switchy::tui::keymap;
@@ -197,6 +197,94 @@ fn wizard_form_treats_command_letters_as_text() {
     assert_eq!(state.form_values()[0], "qjkaextmwsL");
     assert_eq!(state.mode, WizardMode::EditWebDav);
     assert!(state.pop_command().is_none());
+}
+
+#[test]
+fn wizard_backup_settings_require_disable_confirmation_and_keep_failed_draft() {
+    let mut state =
+        WizardState::new_with_backup(Language::EnUs, Vec::new(), None, BackupConfig::default());
+    state.update(WizardAction::BackupSettings);
+    state.update(WizardAction::ToggleBackup);
+    state.update(WizardAction::Move(1));
+    state.update(WizardAction::Backspace);
+    state.update(WizardAction::Backspace);
+    state.update(WizardAction::Input('0'));
+    state.update(WizardAction::Confirm);
+
+    assert_eq!(state.mode, WizardMode::ConfirmDisableBackup);
+    state.update(WizardAction::Cancel);
+    assert_eq!(state.mode, WizardMode::BackupSettings);
+    assert!(state.backup_draft().enabled);
+    assert!(state.backup.enabled);
+
+    state.update(WizardAction::Move(-1));
+    state.update(WizardAction::ToggleBackup);
+    state.update(WizardAction::Confirm);
+    assert_eq!(state.mode, WizardMode::ConfirmDisableBackup);
+    state.update(WizardAction::Confirm);
+    let requested = match state.pop_command().expect("backup command") {
+        WizardCommand::ChangeBackup(backup) => backup,
+        _ => panic!("expected backup command"),
+    };
+    assert_eq!(
+        requested,
+        BackupConfig {
+            enabled: false,
+            max_count: 0,
+        }
+    );
+    assert!(state.backup.enabled);
+
+    state.backup_mutation_failed("disk is read-only".to_string());
+    assert_eq!(state.mode, WizardMode::BackupSettings);
+    assert!(state.backup.enabled);
+    assert!(!state.backup_draft().enabled);
+    assert_eq!(state.backup_draft().max_count, 0);
+    let failed = draw_wizard(&state, 100, 30);
+    assert!(failed.contains("Disabled"));
+    assert!(failed.contains("Unlimited"));
+    assert!(failed.contains("disk is read-only"));
+
+    state.backup_mutation_succeeded(requested);
+    assert_eq!(state.mode, WizardMode::List);
+    assert!(!state.backup.enabled);
+    assert_eq!(state.backup.max_count, 0);
+}
+
+#[test]
+fn wizard_backup_count_accepts_only_digits_and_shows_a_cursor() {
+    let mut state = WizardState::new(Language::EnUs, Vec::new(), None);
+    let open = wizard::action_for_key(&state, key(KeyCode::Char('b'))).expect("backup action");
+    state.update(open);
+    state.update(WizardAction::Move(1));
+    state.update(WizardAction::Backspace);
+    state.update(WizardAction::Backspace);
+
+    assert!(wizard::action_for_key(&state, key(KeyCode::Char('q'))).is_none());
+    assert!(wizard::action_for_key(&state, key(KeyCode::Char('-'))).is_none());
+    let zero = wizard::action_for_key(&state, key(KeyCode::Char('0'))).expect("zero input");
+    state.update(zero);
+
+    let (rendered, cursor_visible, cursor) = draw_wizard_with_cursor(&state, 100, 30);
+    assert!(rendered.contains("Backup Settings"));
+    assert!(rendered.contains("0 (Unlimited)"));
+    assert!(rendered.contains("rollback unavailable"));
+    assert!(cursor_visible);
+    assert_eq!(cursor.y, 5);
+}
+
+#[test]
+fn wizard_backup_shortcut_and_warning_are_bilingual() {
+    let english = WizardState::new(Language::EnUs, Vec::new(), None);
+    assert!(draw_wizard(&english, 100, 30).contains("b backup"));
+
+    let mut chinese = WizardState::new(Language::ZhCn, Vec::new(), None);
+    chinese.update(WizardAction::BackupSettings);
+    let rendered = draw_wizard(&chinese, 100, 30);
+    let compact = rendered.replace(' ', "");
+    assert!(compact.contains("备份设置"));
+    assert!(compact.contains("无法回滚"));
+    assert!(compact.contains("0表示不限数量"));
 }
 
 #[test]
