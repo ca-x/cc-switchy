@@ -257,7 +257,8 @@ binary inherits the build runner's glibc baseline.
 ## Compatibility and license
 
 `cc-switchy` is MIT licensed. CC Switch compatibility behavior was studied and
-adapted from [CC Switch](https://github.com/farion1231/cc-switch) at commit
-`c6197ae32450cd70e2bf03b35e3f5f53ac12044c`. See
+adapted from [CC Switch](https://github.com/farion1231/cc-switch) at commits
+`c6197ae32450cd70e2bf03b35e3f5f53ac12044c` and
+`3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0` schema). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution and the
 upstream MIT notice.

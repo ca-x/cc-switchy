@@ -150,6 +150,21 @@ impl ProgressModel {
         }
     }
 
+    pub(crate) fn apply_skill(
+        &mut self,
+        agent: &str,
+        skill: &str,
+        completed: usize,
+        total: usize,
+        elapsed: Duration,
+        language: Language,
+    ) {
+        self.elapsed = elapsed;
+        let label = Translator::new(language)
+            .text(MessageKey::ProgressApplyingSkills, &MessageArgs::default());
+        self.set_stage(&format!("{label} · {agent} · {skill} {completed}/{total}"));
+    }
+
     pub fn push(&mut self, status: ActivityStatus, text: String) {
         self.log.push_back(ActivityEntry { status, text });
         while self.log.len() > Self::MAX_LOG_ENTRIES {

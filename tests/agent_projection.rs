@@ -4,13 +4,37 @@ use cc_switchy::agent::{
     effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector,
     ProviderProjector, SkillProjector, SkillSyncMethod,
 };
-use cc_switchy::progress::{ChannelProgress, NoopProgress, ProgressEvent};
+use cc_switchy::progress::{NoopProgress, ProgressEvent, ProgressSink};
 use cc_switchy::AppError;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 static SYMLINK_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[derive(Default)]
+struct RecordingSkillProgress {
+    events: Mutex<Vec<ProgressEvent>>,
+    skills: Mutex<Vec<(String, String, usize, usize)>>,
+}
+
+impl ProgressSink for RecordingSkillProgress {
+    fn emit(&self, event: ProgressEvent) {
+        self.events.lock().expect("events lock").push(event);
+    }
+
+    fn emit_skill(&self, agent: String, skill: String, completed: usize, total: usize) {
+        self.skills
+            .lock()
+            .expect("skills lock")
+            .push((agent.clone(), skill, completed, total));
+        self.emit(ProgressEvent::ApplyingSkills {
+            agent,
+            completed,
+            total,
+        });
+    }
+}
 
 fn seeded_database(home: &TempDir) -> std::path::PathBuf {
     let path = home.path().join("cc-switch.db");
@@ -787,25 +811,63 @@ fn skill_progress_uses_directory_when_display_name_is_blank() {
     let settings = DeviceSettings::default();
     let paths = AgentPaths::from_settings(home.path(), &settings);
     let repo = AgentRepository::open(&db_path).expect("repository");
-    let (sender, receiver) = std::sync::mpsc::channel();
+    let progress = Arc::new(RecordingSkillProgress::default());
 
-    SkillProjector::new(
-        &repo,
-        &settings,
-        &paths,
-        Arc::new(ChannelProgress::new(sender)),
-    )
-    .project_agent(Agent::Codex)
-    .expect("Skill projection");
+    SkillProjector::new(&repo, &settings, &paths, progress.clone())
+        .project_agent(Agent::Codex)
+        .expect("Skill projection");
 
-    assert!(receiver.try_iter().any(|event| matches!(
-        event,
-        ProgressEvent::ApplyingSkills {
-            agent,
-            completed: 1,
-            total: 1,
-        } if agent == "Codex · good"
-    )));
+    assert!(progress
+        .events
+        .lock()
+        .expect("events lock")
+        .iter()
+        .any(|event| matches!(
+            event,
+            ProgressEvent::ApplyingSkills {
+                agent,
+                completed: 1,
+                total: 1,
+            } if agent == "Codex"
+        )));
+    assert!(progress.skills.lock().expect("skills lock").iter().any(
+        |(agent, skill, completed, total)| agent == "Codex"
+            && skill == "good"
+            && *completed == 1
+            && *total == 1
+    ));
+}
+
+#[test]
+fn skill_progress_sanitizes_and_bounds_remote_display_names() {
+    let home = TempDir::new().expect("home");
+    let db_path = skills_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    let malicious = format!("Demo\nFORGED\u{1b}]0;owned\u{7}{}", "x".repeat(100));
+    connection
+        .execute(
+            "UPDATE skills SET name = ?1 WHERE id = 'good'",
+            [&malicious],
+        )
+        .expect("malicious Skill name");
+    let ssot = home.path().join(".cc-switch/skills/good");
+    fs::create_dir_all(&ssot).expect("SSOT Skill");
+    fs::write(ssot.join("SKILL.md"), "# Good\n").expect("SKILL.md");
+    let settings = DeviceSettings::default();
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+    let progress = Arc::new(RecordingSkillProgress::default());
+
+    SkillProjector::new(&repo, &settings, &paths, progress.clone())
+        .project_agent(Agent::Codex)
+        .expect("Skill projection");
+
+    let skills = progress.skills.lock().expect("skills lock");
+    let (_, label, _, _) = skills.first().expect("Skill progress");
+    assert!(!label.chars().any(char::is_control));
+    assert!(label.chars().count() <= 81);
+    assert!(label.contains('�'));
+    assert!(label.ends_with('…'));
 }
 
 #[cfg(unix)]

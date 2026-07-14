@@ -366,16 +366,16 @@ fn render_sources(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
             .split(area);
-        render_source_list(frame, app, columns[0]);
+        render_source_list(frame, app, columns[0], false);
         render_source_details(frame, app, columns[1]);
     } else if app.focus == FocusPane::Details {
         render_source_details(frame, app, area);
     } else {
-        render_source_list(frame, app, area);
+        render_source_list(frame, app, area, true);
     }
 }
 
-fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect, show_status: bool) {
     let translator = Translator::new(app.language);
     let items = app
         .sources
@@ -383,7 +383,7 @@ fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .enumerate()
         .map(|(index, source)| {
             let selected = index == app.selected_source;
-            ListItem::new(format!(
+            let header = format!(
                 "{} {}  {:7} {}",
                 if selected { "›" } else { " " },
                 source.config.name,
@@ -393,8 +393,16 @@ fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 } else {
                     String::new()
                 }
-            ))
-            .style(selection_style(selected))
+            );
+            let item = if show_status {
+                let status = source.status.clone().unwrap_or_else(|| {
+                    translator.text(MessageKey::TuiNotTested, &MessageArgs::default())
+                });
+                ListItem::new(vec![Line::raw(header), Line::raw(format!("  {status}"))])
+            } else {
+                ListItem::new(header)
+            };
+            item.style(selection_style(selected))
         })
         .collect::<Vec<_>>();
     frame.render_widget(
@@ -410,8 +418,9 @@ fn render_source_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
     let text = app.selected_source().map_or_else(String::new, |source| {
+        let gap = if area.height < 20 { "\n" } else { "\n\n" };
         format!(
-            "{}\n\n{}\n{}\n\n{}\n{}\n\n{}\n{}/v2/db-v6/{}\n\n{}\n{}",
+            "{}{gap}{}\n{}{gap}{}\n{}{gap}{}\n{}/v2/db-v6/{}{gap}{}\n{}",
             source.config.name,
             translator.text(MessageKey::TuiType, &args),
             source.kind_label(),

@@ -292,11 +292,14 @@ impl App {
                 source
                     .status
                     .clone()
-                    .map(|status| (source.config.name.clone(), status))
+                    .map(|status| (source.config.name.clone(), (source.config.clone(), status)))
             })
             .collect::<HashMap<_, _>>();
         for source in &mut self.sources {
-            source.status = statuses.get(&source.config.name).cloned();
+            source.status = statuses
+                .get(&source.config.name)
+                .filter(|(config, _)| config == &source.config)
+                .map(|(_, status)| status.clone());
         }
     }
 
@@ -517,6 +520,11 @@ mod tests {
 
         assert_eq!(new.sources[0].status.as_deref(), Some("✓ Snapshot abc"));
         assert_eq!(new.sources[1].status, None);
+
+        let mut replacement = app_with_sources([("home", None)]);
+        replacement.sources[0].config.profile = "replacement".to_string();
+        replacement.preserve_source_statuses_from(&old);
+        assert_eq!(replacement.sources[0].status, None);
     }
 
     #[test]

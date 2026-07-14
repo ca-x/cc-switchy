@@ -86,14 +86,14 @@ fn seed_existing_state(paths: &AppPaths) {
     let connection = Connection::open(&db_path).expect("existing database");
     connection
         .execute_batch(
-            "CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, model TEXT NOT NULL);
-             INSERT INTO proxy_request_logs VALUES ('local-request', 'local-model');
+            "CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, model TEXT NOT NULL, input_token_semantics INTEGER NOT NULL DEFAULT 0);
+             INSERT INTO proxy_request_logs VALUES ('local-request', 'local-model', 2);
              CREATE TABLE stream_check_logs (id INTEGER PRIMARY KEY, message TEXT NOT NULL);
              INSERT INTO stream_check_logs VALUES (1, 'local-stream');
              CREATE TABLE proxy_live_backup (app_type TEXT PRIMARY KEY, original_config TEXT NOT NULL, backed_up_at TEXT NOT NULL);
              INSERT INTO proxy_live_backup VALUES ('codex', '{}', 'now');
-             CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, PRIMARY KEY (date, app_type, provider_id, model));
-             INSERT INTO usage_daily_rollups VALUES ('2026-07-13', 'codex', 'local', 'gpt');
+             CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, input_token_semantics INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (date, app_type, provider_id, model));
+             INSERT INTO usage_daily_rollups VALUES ('2026-07-13', 'codex', 'local', 'gpt', 1);
              CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL, is_healthy INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (provider_id, app_type));
              INSERT INTO provider_health VALUES ('local-health', 'codex', 1);",
         )
@@ -211,6 +211,16 @@ fn database_preparation_preserves_local_tables_but_not_provider_health() {
     );
     assert_eq!(
         connection
+            .query_row(
+                "SELECT input_token_semantics FROM proxy_request_logs",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("request input semantics"),
+        2
+    );
+    assert_eq!(
+        connection
             .query_row("SELECT COUNT(*) FROM provider_health", [], |row| row
                 .get::<_, i64>(0))
             .expect("provider health count"),
@@ -221,6 +231,16 @@ fn database_preparation_preserves_local_tables_but_not_provider_health() {
             .query_row("SELECT COUNT(*) FROM stream_check_logs", [], |row| row
                 .get::<_, i64>(0))
             .expect("stream logs"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT input_token_semantics FROM usage_daily_rollups",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("rollup input semantics"),
         1
     );
     assert_eq!(
@@ -276,6 +296,54 @@ fn legacy_database_shape_is_migrated_before_validation() {
     assert!(columns.contains(&"meta".to_string()));
     assert!(columns.contains(&"sort_index".to_string()));
     assert!(table_columns(&connection, "skills").contains(&"enabled_hermes".to_string()));
+    assert!(table_columns(&connection, "proxy_request_logs")
+        .contains(&"input_token_semantics".to_string()));
+    assert!(table_columns(&connection, "usage_daily_rollups")
+        .contains(&"input_token_semantics".to_string()));
+}
+
+#[test]
+fn cc_switch_v13_input_semantics_survive_an_older_snapshot_restore() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    seed_existing_state(&paths);
+    let sql_path = home.path().join("older-db.sql");
+    fs::write(
+        &sql_path,
+        "-- CC Switch SQLite 导出\n\
+         PRAGMA user_version=12;\n\
+         CREATE TABLE providers (id TEXT NOT NULL, app_type TEXT NOT NULL, name TEXT NOT NULL, settings_config TEXT NOT NULL, is_current INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (id, app_type));\n\
+         CREATE TABLE mcp_servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, server_config TEXT NOT NULL);\n\
+         CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, model TEXT NOT NULL);\n\
+         CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, PRIMARY KEY (date, app_type, provider_id, model));\n\
+         INSERT INTO providers VALUES ('legacy', 'codex', 'Legacy', '{}', 1);",
+    )
+    .expect("older snapshot SQL");
+
+    let prepared = prepare_database(&sql_path, Some(&paths.cc_switch_dir.join("cc-switch.db")))
+        .expect("prepare older snapshot");
+    let connection = Connection::open(prepared.file.path()).expect("prepared database");
+
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT input_token_semantics FROM proxy_request_logs WHERE request_id='local-request'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("preserved request semantics"),
+        2
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT input_token_semantics FROM usage_daily_rollups WHERE provider_id='local'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("preserved rollup semantics"),
+        1
+    );
 }
 
 #[test]

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make successful source tests and remote-to-local syncs visibly finish on the Sources view, preserve their transient status across reloads, show the current Skill name during restore, and publish `v0.2.1`.
+**Goal:** Make successful source tests and remote-to-local syncs visibly finish on the Sources view, preserve their transient status across reloads, show the current Skill name during restore, preserve CC Switch 3.17.0 schema-v13 local usage semantics, and publish `v0.2.1`.
 
-**Architecture:** Keep remote and restore semantics unchanged. Store transient feedback on each existing `ViewSource`, preserve it by exact source name whenever the application model reloads, and update it at test/sync lifecycle boundaries. Reuse the existing `ApplyingSkills` event shape by including the current Skill display name in its display label.
+**Architecture:** Keep remote and restore semantics unchanged. Store transient feedback on each existing `ViewSource`, preserve it only for an identical `SourceConfig`, and update it at test/sync lifecycle boundaries. Add a provided `ProgressSink::emit_skill` compatibility method: external sinks receive the unchanged public event while built-in CLI/TUI sinks receive sanitized Skill display details. Keep sync protocol v2/db-v6 while adding the two schema-v13 `input_token_semantics` columns to cc-switchy's minimal local-table repair so older snapshot restores retain current-device usage semantics.
 
 **Tech Stack:** Rust 1.95, Tokio, Ratatui/Crossterm, Cargo integration tests, GitHub Actions.
 
@@ -12,9 +12,10 @@
 
 - Synchronization remains remote-to-local only; add no upload, merge, delete, or bucket-creation behavior.
 - Do not persist test status across process restarts.
-- Do not change the public `ProgressEvent` variant shape or add public `MessageKey` variants.
+- Do not change the public `ProgressEvent` variant shape or the meaning of its `agent` field, and do not add public `MessageKey` variants.
 - Reuse existing localized messages for testing, connecting, snapshot, warning count, and failures.
-- Preserve credentials and request redaction.
+- Preserve credentials and request redaction; TOML parser source lines must not reach public CLI/TUI errors.
+- Keep CC Switch sync compatibility at protocol v2/db-v6; schema-v13 adaptation is limited to local-only table columns and preservation.
 - Release version is exactly `0.2.1` and tag is exactly `v0.2.1`.
 
 ---
@@ -182,7 +183,7 @@ git commit -m "Show source test and sync results in the TUI"
 
 **Interfaces:**
 - Consumes: existing `ProgressEvent::ApplyingSkills { agent, completed, total }`.
-- Produces: `agent` display label formatted as `<Agent> · <Skill display name>` with directory fallback.
+- Produces: default `ProgressSink::emit_skill` forwarding the unchanged public event, with built-in CLI/TUI overrides rendering `<Agent> · <Skill display name>`.
 
 - [ ] **Step 1: Add failing progress assertions**
 
@@ -206,19 +207,16 @@ Expected: failure because the current label is only `Codex`.
 
 - [ ] **Step 3: Implement the display label**
 
-In `SkillProjector::project_agent`, select the trimmed display name unless it is blank, otherwise select `skill.directory`, and emit:
+In `SkillProjector::project_agent`, select the trimmed display name unless it is blank, otherwise select `skill.directory`; sanitize controls and cap it at 80 characters plus ellipsis; then call `emit_skill` with the exact agent identity. The trait default forwards:
 
 ```rust
-let name = if skill.name.trim().is_empty() {
-    skill.directory.as_str()
-} else {
-    skill.name.trim()
-};
-self.progress.emit(ProgressEvent::ApplyingSkills {
-    agent: format!("{agent} · {name}"),
-    completed: index + 1,
-    total,
-});
+fn emit_skill(&self, agent: String, _skill: String, completed: usize, total: usize) {
+    self.emit(ProgressEvent::ApplyingSkills {
+        agent,
+        completed,
+        total,
+    });
+}
 ```
 
 - [ ] **Step 4: Run both focused tests and verify green**
@@ -272,7 +270,41 @@ git add Cargo.toml Cargo.lock README.md
 git commit -m "Prepare cc-switchy v0.2.1"
 ```
 
-### Task 5: Verify, tag, push, and validate the release
+### Task 5: Adapt CC Switch 3.17.0 schema-v13 local tables
+
+**Files:**
+- Modify: `src/restore/schema.rs`
+- Modify: `tests/restore_transaction.rs`
+- Modify: `tests/fixtures/cc-switch-v2/{README.md,db.sql,manifest.json}`
+- Modify: `README.md`
+- Modify: `THIRD_PARTY_NOTICES.md`
+
+**Interfaces:**
+- Consumes: CC Switch `v3.17.0` schema version 13 and unchanged sync protocol v2/db-v6.
+- Produces: repaired `input_token_semantics` columns on `proxy_request_logs` and `usage_daily_rollups` without adding proxy/usage behavior.
+
+- [ ] **Step 1: Compare the pinned upstream baseline with `v3.17.0`**
+
+Verify that `SCHEMA_VERSION` changed from 12 to 13, the only schema additions are `input_token_semantics INTEGER NOT NULL DEFAULT 0` on the two local-only usage tables, and `DB_COMPAT_VERSION` remains 6.
+
+- [ ] **Step 2: Repair and preserve the v13 columns**
+
+Add both columns to minimal table creation and legacy-column repair. Extend preservation tests so a local v13 value survives restoration from a v12 snapshot.
+
+- [ ] **Step 3: Refresh the compatibility fixture**
+
+Set fixture `user_version=13`, add both columns, update manifest size/hash/snapshot ID, and pin the fixture documentation to CC Switch `v3.17.0` commit `3d176b98cc0bfd151a42882e88ab59b62083b92f`.
+
+- [ ] **Step 4: Verify the focused compatibility paths**
+
+```bash
+cargo test --test protocol_compat committed_fixture -- --nocapture
+cargo test --test restore_transaction cc_switch_v13_input_semantics_survive_an_older_snapshot_restore -- --nocapture
+```
+
+Expected: the v13 fixture matches its manifest and both local semantic values survive an older snapshot restore.
+
+### Task 6: Verify, tag, push, and validate the release
 
 **Files:**
 - Verify: all changed files and generated release artifacts.

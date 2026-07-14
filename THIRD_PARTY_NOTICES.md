@@ -7,7 +7,8 @@ behavior by studying and adapting portions of CC Switch.
 
 - Project: CC Switch
 - Source: https://github.com/farion1231/cc-switch
-- Reference commit: `c6197ae32450cd70e2bf03b35e3f5f53ac12044c`
+- Protocol/projection reference: `c6197ae32450cd70e2bf03b35e3f5f53ac12044c`
+- Database schema reference: `3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0`)
 - License: MIT
 
 Adapted areas include:

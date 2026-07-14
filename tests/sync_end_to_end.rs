@@ -196,7 +196,7 @@ async fn consecutive_syncs_refetch_and_project_in_provider_mcp_skills_order() {
             agent,
             completed: 1,
             total: 1,
-        } if agent == "Codex · Demo"
+        } if agent == "Codex"
     )));
     assert!(matches!(events.first(), Some(ProgressEvent::Locking)));
     assert!(events
@@ -316,7 +316,8 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .stdout(predicate::str::contains("Source: home"))
         .stderr(predicate::str::contains("Acquiring the sync lock"))
         .stderr(predicate::str::contains("Downloading db.sql"))
-        .stderr(predicate::str::contains("Applying providers"));
+        .stderr(predicate::str::contains("Applying providers"))
+        .stderr(predicate::str::contains("Codex · Demo"));
     manifest.assert_calls(1);
     database.assert_calls(1);
     skills.assert_calls(1);
@@ -333,6 +334,66 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .stderr(predicate::str::contains(
             "Another sync or restore operation is already running",
         ));
+}
+
+#[test]
+fn redirected_cli_sanitizes_remote_skill_names() {
+    let home = TempDir::new().expect("home");
+    let paths = AppPaths::from_home(home.path());
+    let server = MockServer::start();
+    let malicious_database = String::from_utf8(DATABASE.to_vec())
+        .expect("fixture SQL")
+        .replace(
+            "('demo', 'Demo', 'demo'",
+            "('demo', 'Demo\nFORGED\u{1b}]0;owned\u{7}', 'demo'",
+        )
+        .into_bytes();
+    let manifest = manifest_for(&malicious_database, SKILLS);
+    let (_manifest, _database, _skills) =
+        mount_snapshot_bytes(&server, &manifest, &malicious_database, SKILLS);
+    let _catalog = catalog(&paths, [source("home", server.base_url())]);
+    let mut command = Command::cargo_bin("cc-switchy").expect("binary");
+
+    let output = command
+        .env("CC_SWITCHY_TEST_HOME", home.path())
+        .env("CC_SWITCH_TEST_HOME", home.path())
+        .args(["--sync", "--lang", "en"])
+        .output()
+        .expect("sync output");
+
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
+    assert!(!stderr.contains('\u{1b}'));
+    assert!(!stderr.contains("\nFORGED"));
+    assert!(stderr.contains("Demo�FORGED�]0;owned�"));
+}
+
+#[test]
+fn cli_config_parse_errors_do_not_echo_secret_source_lines() {
+    for (field, secret) in [
+        ("password", "webdav-super-secret"),
+        ("secret_access_key", "s3-super-secret"),
+    ] {
+        let home = TempDir::new().expect("home");
+        let paths = AppPaths::from_home(home.path());
+        fs::create_dir_all(&paths.app_dir).expect("app directory");
+        fs::write(
+            &paths.config_file,
+            format!("version = 1\n{field} = \"{secret}\n"),
+        )
+        .expect("invalid configuration");
+        let mut command = Command::cargo_bin("cc-switchy").expect("binary");
+
+        let output = command
+            .env("CC_SWITCHY_TEST_HOME", home.path())
+            .args(["--sync", "--lang", "en"])
+            .output()
+            .expect("CLI output");
+
+        assert_eq!(output.status.code(), Some(1));
+        let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
+        assert!(stderr.contains("failed to parse configuration"));
+        assert!(!stderr.contains(secret));
+    }
 }
 
 #[test]

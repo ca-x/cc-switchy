@@ -168,12 +168,24 @@ pub async fn run_with_terminal(
                 TuiCommand::TestSource { source }
                     if active_cancel.is_none() && !active_source_test =>
                 {
-                    active_source_test = true;
-                    app.set_source_status(
-                        &source,
-                        text(app.language, MessageKey::WizardTesting, []),
-                    );
-                    spawn_source_test(paths.clone(), source, sender.clone());
+                    if let Some(config) = app
+                        .sources
+                        .iter()
+                        .find(|item| item.config.name == source)
+                        .map(|item| item.config.clone())
+                    {
+                        active_source_test = true;
+                        app.set_source_status(
+                            &source,
+                            text(app.language, MessageKey::WizardTesting, []),
+                        );
+                        spawn_source_test(config, sender.clone());
+                    } else {
+                        app.push_activity(
+                            ActivityStatus::Error,
+                            AppError::SourceNotFound(source).to_string(),
+                        );
+                    }
                 }
                 TuiCommand::TestSource { .. } => app.push_activity(
                     ActivityStatus::Warning,
@@ -200,13 +212,17 @@ pub async fn run_with_terminal(
                     app.language = language;
                     app.persisted().save(&paths.state_file)?;
                 }
-                TuiCommand::OpenWizard if active_cancel.is_none() => {
+                TuiCommand::OpenWizard if active_cancel.is_none() && !active_source_test => {
                     super::wizard::run_embedded(terminal, paths.clone(), app.language).await?;
                     app = reload_app(&paths, app)?;
                 }
-                TuiCommand::OpenWizard => app.push_activity(
+                TuiCommand::OpenWizard if active_cancel.is_some() => app.push_activity(
                     ActivityStatus::Warning,
                     text(app.language, MessageKey::ActivityWizardBlocked, []),
+                ),
+                TuiCommand::OpenWizard => app.push_activity(
+                    ActivityStatus::Warning,
+                    text(app.language, MessageKey::ActivityOperationRunning, []),
                 ),
                 TuiCommand::RetryWarnings => {
                     spawn_projection_retry(paths.clone(), sender.clone());
@@ -218,13 +234,20 @@ pub async fn run_with_terminal(
 
 enum RuntimeMessage {
     Progress(ProgressEvent),
+    SkillProgress {
+        agent: String,
+        skill: String,
+        completed: usize,
+        total: usize,
+    },
     SyncFinished {
-        source: String,
+        source_name: String,
+        source: Option<crate::config::SourceConfig>,
         result: Result<super::sync::SyncOutcome, AppError>,
     },
     ActionFinished(Result<ActionSuccess, AppError>),
     SourceTestFinished {
-        source: String,
+        source: crate::config::SourceConfig,
         result: Result<SourceTestStatus, AppError>,
     },
 }
@@ -249,6 +272,15 @@ impl ProgressSink for RuntimeProgress {
     fn emit(&self, event: ProgressEvent) {
         let _ = self.sender.send(RuntimeMessage::Progress(event));
     }
+
+    fn emit_skill(&self, agent: String, skill: String, completed: usize, total: usize) {
+        let _ = self.sender.send(RuntimeMessage::SkillProgress {
+            agent,
+            skill,
+            completed,
+            total,
+        });
+    }
 }
 
 fn spawn_sync(
@@ -258,8 +290,10 @@ fn spawn_sync(
     sender: mpsc::UnboundedSender<RuntimeMessage>,
 ) {
     tokio::spawn(async move {
+        let mut resolved_source = None;
         let result = async {
             let catalog = SourceCatalog::load(ConfigStore::new(paths.config_file.clone()))?;
+            resolved_source = Some(catalog.resolve(Some(&source))?.clone());
             let progress: Arc<dyn ProgressSink> = Arc::new(RuntimeProgress {
                 sender: sender.clone(),
             });
@@ -276,7 +310,11 @@ fn spawn_sync(
                 .await
         }
         .await;
-        let _ = sender.send(RuntimeMessage::SyncFinished { source, result });
+        let _ = sender.send(RuntimeMessage::SyncFinished {
+            source_name: source,
+            source: resolved_source,
+            result,
+        });
     });
 }
 
@@ -352,14 +390,12 @@ fn spawn_projection_retry(paths: AppPaths, sender: mpsc::UnboundedSender<Runtime
 }
 
 fn spawn_source_test(
-    paths: AppPaths,
-    source_name: String,
+    source: crate::config::SourceConfig,
     sender: mpsc::UnboundedSender<RuntimeMessage>,
 ) {
     tokio::spawn(async move {
+        let tested_source = source.clone();
         let result = async {
-            let catalog = SourceCatalog::load(ConfigStore::new(paths.config_file))?;
-            let source = catalog.resolve(Some(&source_name))?.clone();
             let progress: Arc<dyn ProgressSink> = Arc::new(NoopProgress);
             let remote = RemoteClient::new(source, progress)?;
             match remote.test_connection().await? {
@@ -371,7 +407,7 @@ fn spawn_source_test(
         }
         .await;
         let _ = sender.send(RuntimeMessage::SourceTestFinished {
-            source: source_name,
+            source: tested_source,
             result,
         });
     });
@@ -394,9 +430,29 @@ fn handle_message(
                     .unwrap_or_default(),
             );
         }
-        RuntimeMessage::SyncFinished { source, result } => {
+        RuntimeMessage::SkillProgress {
+            agent,
+            skill,
+            completed,
+            total,
+        } => app.progress.apply_skill(
+            &agent,
+            &skill,
+            completed,
+            total,
+            active_started
+                .map(|started| started.elapsed())
+                .unwrap_or_default(),
+            app.language,
+        ),
+        RuntimeMessage::SyncFinished {
+            source_name,
+            source,
+            result,
+        } => {
             *active_cancel = None;
             *active_started = None;
+            app.progress.active = false;
             match result {
                 Ok(outcome) => {
                     let warnings = outcome.projection.warnings.len();
@@ -414,7 +470,12 @@ fn handle_message(
                         )
                     );
                     *app = reload_app(paths, std::mem::replace(app, empty_app(app.language)))?;
-                    app.set_source_status(&source, status);
+                    if source
+                        .as_ref()
+                        .is_some_and(|config| app.sources.iter().any(|item| &item.config == config))
+                    {
+                        app.set_source_status(&source_name, status);
+                    }
                     app.push_activity(
                         if warnings == 0 {
                             ActivityStatus::Success
@@ -430,7 +491,12 @@ fn handle_message(
                 }
                 Err(error) => {
                     let detail = error.to_string();
-                    app.set_source_status(&source, format!("× {detail}"));
+                    if source
+                        .as_ref()
+                        .is_none_or(|config| app.sources.iter().any(|item| &item.config == config))
+                    {
+                        app.set_source_status(&source_name, format!("× {detail}"));
+                    }
                     app.push_activity(ActivityStatus::Error, detail);
                 }
             }
@@ -459,6 +525,7 @@ fn handle_message(
         },
         RuntimeMessage::SourceTestFinished { source, result } => {
             *active_source_test = false;
+            let source_name = source.name.clone();
             let status = match result {
                 Ok(SourceTestStatus::Snapshot(snapshot)) => text(
                     app.language,
@@ -470,8 +537,10 @@ fn handle_message(
                 }
                 Err(error) => format!("× {error}"),
             };
-            app.set_source_status(&source, status.clone());
-            app.push_activity(ActivityStatus::Info, format!("{source}: {status}"));
+            if app.sources.iter().any(|item| item.config == source) {
+                app.set_source_status(&source_name, status.clone());
+                app.push_activity(ActivityStatus::Info, format!("{source_name}: {status}"));
+            }
         }
     }
     Ok(())
@@ -621,6 +690,7 @@ mod tests {
         let home = TempDir::new().expect("home");
         let paths = paths_with_source(&home, "home");
         let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let tested = app.sources[0].config.clone();
         app.progress.active = true;
         let mut cancel = None;
         let mut active_source_test = true;
@@ -630,7 +700,7 @@ mod tests {
             &paths,
             &mut app,
             RuntimeMessage::SourceTestFinished {
-                source: "home".to_string(),
+                source: tested,
                 result: Ok(SourceTestStatus::Snapshot("abc123".to_string())),
             },
             &mut cancel,
@@ -645,10 +715,44 @@ mod tests {
     }
 
     #[test]
+    fn stale_source_test_result_does_not_update_a_reconfigured_source() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let tested = load_app(&paths, Language::EnUs, PersistedUiState::default())
+            .expect("tested app")
+            .sources
+            .remove(0)
+            .config;
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        app.sources[0].config.profile = "replacement".to_string();
+        let mut cancel = None;
+        let mut active_source_test = true;
+        let mut started = None;
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SourceTestFinished {
+                source: tested,
+                result: Ok(SourceTestStatus::Snapshot("stale".to_string())),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert!(!active_source_test);
+        assert_eq!(app.sources[0].status, None);
+        assert!(app.progress.log.is_empty());
+    }
+
+    #[test]
     fn sync_completion_reloads_data_and_keeps_result_on_the_source() {
         let home = TempDir::new().expect("home");
         let paths = paths_with_source(&home, "home");
         let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let synced_source = app.sources[0].config.clone();
         app.progress.active = true;
         let mut cancel = Some(CancellationToken::new());
         let mut active_source_test = false;
@@ -658,7 +762,8 @@ mod tests {
             &paths,
             &mut app,
             RuntimeMessage::SyncFinished {
-                source: "home".to_string(),
+                source_name: "home".to_string(),
+                source: Some(synced_source),
                 result: Ok(super::super::sync::SyncOutcome {
                     source_name: "home".to_string(),
                     snapshot_id: "abcdef1234567890".to_string(),
@@ -686,6 +791,8 @@ mod tests {
         let home = TempDir::new().expect("home");
         let paths = paths_with_source(&home, "home");
         let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let synced_source = app.sources[0].config.clone();
+        app.progress.active = true;
         let mut cancel = Some(CancellationToken::new());
         let mut active_source_test = false;
         let mut started = Some(Instant::now());
@@ -694,7 +801,8 @@ mod tests {
             &paths,
             &mut app,
             RuntimeMessage::SyncFinished {
-                source: "home".to_string(),
+                source_name: "home".to_string(),
+                source: Some(synced_source),
                 result: Err(AppError::Cancelled),
             },
             &mut cancel,
@@ -707,5 +815,108 @@ mod tests {
             app.sources[0].status.as_deref(),
             Some("× synchronization was cancelled")
         );
+        assert!(!app.progress.active);
+    }
+
+    #[test]
+    fn sync_completion_does_not_mark_a_reconfigured_same_name_source() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let synced_source = app.sources[0].config.clone();
+        let mut replacement = synced_source.clone();
+        replacement.profile = "replacement".to_string();
+        let mut catalog =
+            SourceCatalog::load(ConfigStore::new(paths.config_file.clone())).expect("catalog");
+        catalog
+            .update("home", replacement)
+            .expect("replace source configuration");
+        app.progress.active = true;
+        let mut cancel = Some(CancellationToken::new());
+        let mut active_source_test = false;
+        let mut started = Some(Instant::now());
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SyncFinished {
+                source_name: "home".to_string(),
+                source: Some(synced_source),
+                result: Ok(super::super::sync::SyncOutcome {
+                    source_name: "home".to_string(),
+                    snapshot_id: "abcdef1234567890".to_string(),
+                    backup_dir: paths.backups_dir.join("backup"),
+                    projection: crate::agent::ProjectionReport::default(),
+                    duration: Duration::from_secs(1),
+                }),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert_eq!(app.sources[0].config.profile, "replacement");
+        assert_eq!(app.sources[0].status, None);
+        assert!(!app.progress.active);
+    }
+
+    #[test]
+    fn config_parse_errors_do_not_include_source_lines() {
+        let parse_error = match toml::from_str::<crate::config::AppConfig>(
+            "version = 1\npassword = \"super-secret\n",
+        ) {
+            Ok(_) => panic!("invalid TOML was accepted"),
+            Err(error) => error,
+        };
+
+        let visible = AppError::ConfigParse(parse_error).to_string();
+
+        assert_eq!(visible, "failed to parse configuration");
+        assert!(!visible.contains("super-secret"));
+    }
+
+    #[test]
+    fn runtime_skill_progress_keeps_agent_and_skill_separate() {
+        let (sender, mut receiver) = mpsc::unbounded_channel();
+
+        RuntimeProgress { sender }.emit_skill("Codex".to_string(), "Demo".to_string(), 1, 2);
+
+        assert!(matches!(
+            receiver.try_recv().expect("runtime message"),
+            RuntimeMessage::SkillProgress {
+                agent,
+                skill,
+                completed: 1,
+                total: 2,
+            } if agent == "Codex" && skill == "Demo"
+        ));
+    }
+
+    #[test]
+    fn runtime_skill_progress_updates_the_tui_stage() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let mut cancel = None;
+        let mut active_source_test = false;
+        let mut started = None;
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SkillProgress {
+                agent: "Codex".to_string(),
+                skill: "Demo".to_string(),
+                completed: 1,
+                total: 2,
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert_eq!(app.progress.stage, "Applying Skills · Codex · Demo 1/2");
     }
 }

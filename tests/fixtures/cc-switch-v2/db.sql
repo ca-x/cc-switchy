@@ -1,7 +1,7 @@
 -- CC Switch SQLite 导出
 -- fixture for cc-switchy compatibility tests
 PRAGMA foreign_keys=OFF;
-PRAGMA user_version=12;
+PRAGMA user_version=13;
 BEGIN TRANSACTION;
 CREATE TABLE providers (
     id TEXT NOT NULL,
@@ -53,10 +53,10 @@ CREATE TABLE skills (
     content_hash TEXT,
     updated_at INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, model TEXT NOT NULL);
+CREATE TABLE proxy_request_logs (request_id TEXT PRIMARY KEY, model TEXT NOT NULL, input_token_semantics INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE stream_check_logs (id INTEGER PRIMARY KEY, message TEXT NOT NULL);
 CREATE TABLE proxy_live_backup (app_type TEXT PRIMARY KEY, original_config TEXT NOT NULL, backed_up_at TEXT NOT NULL);
-CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, PRIMARY KEY (date, app_type, provider_id, model));
+CREATE TABLE usage_daily_rollups (date TEXT NOT NULL, app_type TEXT NOT NULL, provider_id TEXT NOT NULL, model TEXT NOT NULL, input_token_semantics INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (date, app_type, provider_id, model));
 CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL, is_healthy INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (provider_id, app_type));
 INSERT INTO providers (id, app_type, name, settings_config, created_at, sort_index, meta, is_current)
 VALUES

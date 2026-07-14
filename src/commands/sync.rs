@@ -304,6 +304,20 @@ impl ProgressSink for CliProgress {
             eprintln!("{line}");
         }
     }
+
+    fn emit_skill(&self, agent: String, skill: String, completed: usize, total: usize) {
+        let line = format!(
+            "{}: {agent} · {skill} {completed}/{total}",
+            Translator::new(self.language)
+                .text(MessageKey::ProgressApplyingSkills, &MessageArgs::default())
+        );
+        if self.tty {
+            eprint!("\r\x1b[2K{line}");
+            let _ = std::io::stderr().flush();
+        } else {
+            eprintln!("{line}");
+        }
+    }
 }
 
 fn render_outcome(translator: &Translator, outcome: &SyncOutcome) -> String {

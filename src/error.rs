@@ -18,7 +18,7 @@ pub enum AppError {
         #[source]
         source: std::io::Error,
     },
-    #[error("failed to parse configuration: {0}")]
+    #[error("failed to parse configuration")]
     ConfigParse(#[from] toml::de::Error),
     #[error("failed to serialize configuration: {0}")]
     ConfigSerialize(#[from] toml::ser::Error),

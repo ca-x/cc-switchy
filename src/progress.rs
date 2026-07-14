@@ -57,6 +57,14 @@ pub enum ProgressEvent {
 
 pub trait ProgressSink: Send + Sync {
     fn emit(&self, event: ProgressEvent);
+
+    fn emit_skill(&self, agent: String, _skill: String, completed: usize, total: usize) {
+        self.emit(ProgressEvent::ApplyingSkills {
+            agent,
+            completed,
+            total,
+        });
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]

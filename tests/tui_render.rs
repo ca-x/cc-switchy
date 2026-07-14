@@ -529,6 +529,12 @@ fn source_operation_status_is_visible_in_details() {
     assert!(rendered.contains("Sync finished with 0"));
     assert!(rendered.contains("warning(s)."));
     assert!(!rendered.contains("Not tested"));
+
+    let narrow = draw(&app, 70, 24);
+    assert!(narrow.contains("✓ Snapshot abcdef123456"));
+
+    let short = draw(&app, 100, 18);
+    assert!(short.contains("✓ Snapshot abcdef123456"));
 }
 
 #[test]

@@ -92,16 +92,17 @@ impl<'a> SkillProjector<'a> {
             if let Err(error) = self.sync_skill(&ssot, &app_dir, skill) {
                 errors.push(format!("{}: {error}", skill.directory));
             }
-            let name = if skill.name.trim().is_empty() {
+            let raw_name = if skill.name.trim().is_empty() {
                 skill.directory.as_str()
             } else {
                 skill.name.trim()
             };
-            self.progress.emit(ProgressEvent::ApplyingSkills {
-                agent: format!("{agent} · {name}"),
-                completed: index + 1,
+            self.progress.emit_skill(
+                agent.to_string(),
+                safe_progress_label(raw_name),
+                index + 1,
                 total,
-            });
+            );
         }
 
         if errors.is_empty() {
@@ -178,6 +179,27 @@ impl<'a> SkillProjector<'a> {
             SkillSyncMethod::Copy => replace_with_copy(&source, &destination, &skill.directory),
         }
     }
+}
+
+fn safe_progress_label(value: &str) -> String {
+    const MAX_CHARS: usize = 80;
+
+    let mut characters = value.trim().chars();
+    let mut safe = characters
+        .by_ref()
+        .take(MAX_CHARS)
+        .map(|character| {
+            if character.is_control() {
+                '�'
+            } else {
+                character
+            }
+        })
+        .collect::<String>();
+    if characters.next().is_some() {
+        safe.push('…');
+    }
+    safe
 }
 
 fn validate_directory_name(directory: &str) -> Result<(), AppError> {

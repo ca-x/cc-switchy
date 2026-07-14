@@ -71,7 +71,8 @@ fn create_core_tables(connection: &Connection) -> Result<(), AppError> {
             );
             CREATE TABLE IF NOT EXISTS proxy_request_logs (
                 request_id TEXT PRIMARY KEY,
-                model TEXT NOT NULL DEFAULT ''
+                model TEXT NOT NULL DEFAULT '',
+                input_token_semantics INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS stream_check_logs (
                 id INTEGER PRIMARY KEY,
@@ -87,6 +88,7 @@ fn create_core_tables(connection: &Connection) -> Result<(), AppError> {
                 app_type TEXT NOT NULL,
                 provider_id TEXT NOT NULL,
                 model TEXT NOT NULL,
+                input_token_semantics INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (date, app_type, provider_id, model)
             );",
         )
@@ -147,6 +149,16 @@ fn migrate_legacy_columns(connection: &Connection) -> Result<(), AppError> {
         ("skills", "installed_at", "INTEGER NOT NULL DEFAULT 0"),
         ("skills", "content_hash", "TEXT"),
         ("skills", "updated_at", "INTEGER NOT NULL DEFAULT 0"),
+        (
+            "proxy_request_logs",
+            "input_token_semantics",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "usage_daily_rollups",
+            "input_token_semantics",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
     ] {
         add_column_if_missing(connection, table, column, declaration)?;
     }
