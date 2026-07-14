@@ -92,8 +92,13 @@ impl<'a> SkillProjector<'a> {
             if let Err(error) = self.sync_skill(&ssot, &app_dir, skill) {
                 errors.push(format!("{}: {error}", skill.directory));
             }
+            let name = if skill.name.trim().is_empty() {
+                skill.directory.as_str()
+            } else {
+                skill.name.trim()
+            };
             self.progress.emit(ProgressEvent::ApplyingSkills {
-                agent: agent.to_string(),
+                agent: format!("{agent} · {name}"),
                 completed: index + 1,
                 total,
             });

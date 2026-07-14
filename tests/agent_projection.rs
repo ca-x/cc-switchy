@@ -4,7 +4,7 @@ use cc_switchy::agent::{
     effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings, McpProjector,
     ProviderProjector, SkillProjector, SkillSyncMethod,
 };
-use cc_switchy::progress::NoopProgress;
+use cc_switchy::progress::{ChannelProgress, NoopProgress, ProgressEvent};
 use cc_switchy::AppError;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
@@ -771,6 +771,41 @@ fn skills_auto_falls_back_to_copy_when_symlink_creation_fails() {
         .expect("destination metadata")
         .file_type()
         .is_symlink());
+}
+
+#[test]
+fn skill_progress_uses_directory_when_display_name_is_blank() {
+    let home = TempDir::new().expect("home");
+    let db_path = skills_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute("UPDATE skills SET name = '' WHERE id = 'good'", [])
+        .expect("blank Skill name");
+    let ssot = home.path().join(".cc-switch/skills/good");
+    fs::create_dir_all(&ssot).expect("SSOT Skill");
+    fs::write(ssot.join("SKILL.md"), "# Good\n").expect("SKILL.md");
+    let settings = DeviceSettings::default();
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let repo = AgentRepository::open(&db_path).expect("repository");
+    let (sender, receiver) = std::sync::mpsc::channel();
+
+    SkillProjector::new(
+        &repo,
+        &settings,
+        &paths,
+        Arc::new(ChannelProgress::new(sender)),
+    )
+    .project_agent(Agent::Codex)
+    .expect("Skill projection");
+
+    assert!(receiver.try_iter().any(|event| matches!(
+        event,
+        ProgressEvent::ApplyingSkills {
+            agent,
+            completed: 1,
+            total: 1,
+        } if agent == "Codex · good"
+    )));
 }
 
 #[cfg(unix)]

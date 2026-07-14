@@ -190,6 +190,14 @@ async fn consecutive_syncs_refetch_and_project_in_provider_mcp_skills_order() {
         .position(|event| matches!(event, ProgressEvent::ApplyingSkills { .. }))
         .expect("Skills event");
     assert!(provider < mcp && mcp < skill);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ProgressEvent::ApplyingSkills {
+            agent,
+            completed: 1,
+            total: 1,
+        } if agent == "Codex · Demo"
+    )));
     assert!(matches!(events.first(), Some(ProgressEvent::Locking)));
     assert!(events
         .iter()
