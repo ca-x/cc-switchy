@@ -517,6 +517,21 @@ fn main_footer_only_advertises_actions_for_the_current_view() {
 }
 
 #[test]
+fn source_operation_status_is_visible_in_details() {
+    let mut app = app(Language::EnUs, true);
+    app.view = MainView::Sources;
+    app.sources[0].status =
+        Some("✓ Snapshot abcdef123456 · Sync finished with 0 warning(s).".to_string());
+
+    let rendered = draw(&app, 100, 30);
+
+    assert!(rendered.contains("✓ Snapshot abcdef123456"));
+    assert!(rendered.contains("Sync finished with 0"));
+    assert!(rendered.contains("warning(s)."));
+    assert!(!rendered.contains("Not tested"));
+}
+
+#[test]
 fn no_source_empty_state_is_bilingual_and_actionable() {
     let mut english = app(Language::EnUs, false);
     english.view = MainView::Sources;

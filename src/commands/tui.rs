@@ -20,7 +20,7 @@ use crate::agent::{
     SkillProjector,
 };
 use crate::config::{ConfigStore, SourceCatalog};
-use crate::progress::{ProgressEvent, ProgressSink};
+use crate::progress::{NoopProgress, ProgressEvent, ProgressSink};
 use crate::remote::RemoteClient;
 use crate::tui::event::ActivityStatus;
 use crate::tui::keymap;
@@ -73,6 +73,7 @@ pub async fn run_with_terminal(
     let mut app = load_app(&paths, language, persisted)?;
     let (sender, mut receiver) = mpsc::unbounded_channel::<RuntimeMessage>();
     let mut active_cancel: Option<CancellationToken> = None;
+    let mut active_source_test = false;
     let mut active_started: Option<Instant> = None;
     let mut dirty = true;
     let mut last_draw = Instant::now();
@@ -84,6 +85,7 @@ pub async fn run_with_terminal(
                 &mut app,
                 message,
                 &mut active_cancel,
+                &mut active_source_test,
                 &mut active_started,
             )?;
             dirty = true;
@@ -127,11 +129,21 @@ pub async fn run_with_terminal(
                     return Ok(());
                 }
                 TuiCommand::PersistUi => app.persisted().save(&paths.state_file)?,
-                TuiCommand::SyncSource { source } if active_cancel.is_none() => {
+                TuiCommand::SyncSource { source }
+                    if active_cancel.is_none() && !active_source_test =>
+                {
                     let cancellation = CancellationToken::new();
                     active_started = Some(Instant::now());
                     active_cancel = Some(cancellation.clone());
                     app.progress.active = true;
+                    app.set_source_status(
+                        &source,
+                        text(
+                            app.language,
+                            MessageKey::ProgressConnecting,
+                            [("source", source.clone())],
+                        ),
+                    );
                     spawn_sync(paths.clone(), source, cancellation, sender.clone());
                 }
                 TuiCommand::SyncSource { .. } => app.push_activity(
@@ -153,9 +165,20 @@ pub async fn run_with_terminal(
                 TuiCommand::ReapplyProviders { agent } => {
                     spawn_provider_action(paths.clone(), agent, None, sender.clone());
                 }
-                TuiCommand::TestSource { source } => {
+                TuiCommand::TestSource { source }
+                    if active_cancel.is_none() && !active_source_test =>
+                {
+                    active_source_test = true;
+                    app.set_source_status(
+                        &source,
+                        text(app.language, MessageKey::WizardTesting, []),
+                    );
                     spawn_source_test(paths.clone(), source, sender.clone());
                 }
+                TuiCommand::TestSource { .. } => app.push_activity(
+                    ActivityStatus::Warning,
+                    text(app.language, MessageKey::ActivityOperationRunning, []),
+                ),
                 TuiCommand::MakeDefault { source } => {
                     let mut catalog =
                         SourceCatalog::load(ConfigStore::new(paths.config_file.clone()))?;
@@ -195,7 +218,10 @@ pub async fn run_with_terminal(
 
 enum RuntimeMessage {
     Progress(ProgressEvent),
-    SyncFinished(Result<super::sync::SyncOutcome, AppError>),
+    SyncFinished {
+        source: String,
+        result: Result<super::sync::SyncOutcome, AppError>,
+    },
     ActionFinished(Result<ActionSuccess, AppError>),
     SourceTestFinished {
         source: String,
@@ -245,12 +271,12 @@ fn spawn_sync(
             };
             service
                 .run(SyncRequest {
-                    source_name: Some(source),
+                    source_name: Some(source.clone()),
                 })
                 .await
         }
         .await;
-        let _ = sender.send(RuntimeMessage::SyncFinished(result));
+        let _ = sender.send(RuntimeMessage::SyncFinished { source, result });
     });
 }
 
@@ -334,9 +360,7 @@ fn spawn_source_test(
         let result = async {
             let catalog = SourceCatalog::load(ConfigStore::new(paths.config_file))?;
             let source = catalog.resolve(Some(&source_name))?.clone();
-            let progress: Arc<dyn ProgressSink> = Arc::new(RuntimeProgress {
-                sender: sender.clone(),
-            });
+            let progress: Arc<dyn ProgressSink> = Arc::new(NoopProgress);
             let remote = RemoteClient::new(source, progress)?;
             match remote.test_connection().await? {
                 Some(manifest) => Ok(SourceTestStatus::Snapshot(
@@ -358,6 +382,7 @@ fn handle_message(
     app: &mut App,
     message: RuntimeMessage,
     active_cancel: &mut Option<CancellationToken>,
+    active_source_test: &mut bool,
     active_started: &mut Option<Instant>,
 ) -> Result<(), AppError> {
     match message {
@@ -369,15 +394,27 @@ fn handle_message(
                     .unwrap_or_default(),
             );
         }
-        RuntimeMessage::SyncFinished(result) => {
+        RuntimeMessage::SyncFinished { source, result } => {
             *active_cancel = None;
             *active_started = None;
             match result {
                 Ok(outcome) => {
                     let warnings = outcome.projection.warnings.len();
-                    let old =
-                        std::mem::replace(app, load_app(paths, app.language, app.persisted())?);
-                    app.progress = old.progress;
+                    let status = format!(
+                        "{} · {}",
+                        text(
+                            app.language,
+                            MessageKey::ActivitySnapshot,
+                            [("snapshot", short_id(&outcome.snapshot_id).to_string())],
+                        ),
+                        text(
+                            app.language,
+                            MessageKey::ActivitySyncFinished,
+                            [("warnings", warnings.to_string())],
+                        )
+                    );
+                    *app = reload_app(paths, std::mem::replace(app, empty_app(app.language)))?;
+                    app.set_source_status(&source, status);
                     app.push_activity(
                         if warnings == 0 {
                             ActivityStatus::Success
@@ -391,7 +428,11 @@ fn handle_message(
                         ),
                     );
                 }
-                Err(error) => app.push_activity(ActivityStatus::Error, error.to_string()),
+                Err(error) => {
+                    let detail = error.to_string();
+                    app.set_source_status(&source, format!("× {detail}"));
+                    app.push_activity(ActivityStatus::Error, detail);
+                }
             }
         }
         RuntimeMessage::ActionFinished(result) => match result {
@@ -417,6 +458,7 @@ fn handle_message(
             Err(error) => app.push_activity(ActivityStatus::Error, error.to_string()),
         },
         RuntimeMessage::SourceTestFinished { source, result } => {
+            *active_source_test = false;
             let status = match result {
                 Ok(SourceTestStatus::Snapshot(snapshot)) => text(
                     app.language,
@@ -428,13 +470,7 @@ fn handle_message(
                 }
                 Err(error) => format!("× {error}"),
             };
-            if let Some(item) = app
-                .sources
-                .iter_mut()
-                .find(|item| item.config.name == source)
-            {
-                item.status = Some(status.clone());
-            }
+            app.set_source_status(&source, status.clone());
             app.push_activity(ActivityStatus::Info, format!("{source}: {status}"));
         }
     }
@@ -505,9 +541,9 @@ fn load_app(
 fn reload_app(paths: &AppPaths, old: App) -> Result<App, AppError> {
     let persisted = old.persisted();
     let language = old.language;
-    let progress = old.progress;
     let mut app = load_app(paths, language, persisted)?;
-    app.progress = progress;
+    app.preserve_source_statuses_from(&old);
+    app.progress = old.progress;
     Ok(app)
 }
 
@@ -551,4 +587,125 @@ fn install_panic_restore() {
 fn restore_terminal() {
     let _ = execute!(io::stdout(), Show, LeaveAlternateScreen);
     let _ = disable_raw_mode();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{SourceConfig, SourceKind, WebDavConfig};
+    use tempfile::TempDir;
+
+    fn paths_with_source(home: &TempDir, name: &str) -> AppPaths {
+        let paths = AppPaths::from_home(home.path());
+        let mut catalog =
+            SourceCatalog::load(ConfigStore::new(paths.config_file.clone())).expect("catalog");
+        catalog
+            .add(SourceConfig {
+                name: name.to_string(),
+                remote_root: "cc-switch-sync".to_string(),
+                profile: "default".to_string(),
+                kind: SourceKind::WebDav {
+                    webdav: WebDavConfig {
+                        base_url: "https://dav.example.test".to_string(),
+                        username: "user".to_string(),
+                        password: "secret".to_string(),
+                    },
+                },
+            })
+            .expect("add source");
+        paths
+    }
+
+    #[test]
+    fn source_test_completion_finishes_test_without_changing_global_progress() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        app.progress.active = true;
+        let mut cancel = None;
+        let mut active_source_test = true;
+        let mut started = None;
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SourceTestFinished {
+                source: "home".to_string(),
+                result: Ok(SourceTestStatus::Snapshot("abc123".to_string())),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert!(!active_source_test);
+        assert!(app.progress.active);
+        assert_eq!(app.sources[0].status.as_deref(), Some("✓ Snapshot abc123"));
+    }
+
+    #[test]
+    fn sync_completion_reloads_data_and_keeps_result_on_the_source() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        app.progress.active = true;
+        let mut cancel = Some(CancellationToken::new());
+        let mut active_source_test = false;
+        let mut started = Some(Instant::now());
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SyncFinished {
+                source: "home".to_string(),
+                result: Ok(super::super::sync::SyncOutcome {
+                    source_name: "home".to_string(),
+                    snapshot_id: "abcdef1234567890".to_string(),
+                    backup_dir: paths.backups_dir.join("backup"),
+                    projection: crate::agent::ProjectionReport::default(),
+                    duration: Duration::from_secs(1),
+                }),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert!(cancel.is_none());
+        assert!(started.is_none());
+        assert_eq!(
+            app.sources[0].status.as_deref(),
+            Some("✓ Snapshot abcdef123456 · Sync finished with 0 warning(s).")
+        );
+    }
+
+    #[test]
+    fn sync_failure_is_visible_on_the_source() {
+        let home = TempDir::new().expect("home");
+        let paths = paths_with_source(&home, "home");
+        let mut app = load_app(&paths, Language::EnUs, PersistedUiState::default()).expect("app");
+        let mut cancel = Some(CancellationToken::new());
+        let mut active_source_test = false;
+        let mut started = Some(Instant::now());
+
+        handle_message(
+            &paths,
+            &mut app,
+            RuntimeMessage::SyncFinished {
+                source: "home".to_string(),
+                result: Err(AppError::Cancelled),
+            },
+            &mut cancel,
+            &mut active_source_test,
+            &mut started,
+        )
+        .expect("message");
+
+        assert_eq!(
+            app.sources[0].status.as_deref(),
+            Some("× synchronization was cancelled")
+        );
+    }
 }

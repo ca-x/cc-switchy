@@ -510,10 +510,7 @@ mod tests {
 
     #[test]
     fn source_statuses_survive_reload_only_for_exact_names() {
-        let old = app_with_sources([
-            ("home", Some("✓ Snapshot abc")),
-            ("old", Some("× failed")),
-        ]);
+        let old = app_with_sources([("home", Some("✓ Snapshot abc")), ("old", Some("× failed"))]);
         let mut new = app_with_sources([("home", None), ("renamed", None)]);
 
         new.preserve_source_statuses_from(&old);
