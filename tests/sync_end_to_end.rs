@@ -398,10 +398,14 @@ fn redirected_cli_prints_stage_lines_summary_and_exit_codes() {
         .code(2)
         .stdout(predicate::str::contains("Sync succeeded"))
         .stdout(predicate::str::contains("Source: home"))
+        .stdout(predicate::str::contains("Restored Skills: 1"))
         .stderr(predicate::str::contains("Acquiring the sync lock"))
         .stderr(predicate::str::contains("Downloading db.sql"))
+        .stderr(predicate::str::contains("Restoring Skills: 1"))
         .stderr(predicate::str::contains("Applying providers"))
-        .stderr(predicate::str::contains("Codex · Demo"));
+        .stderr(predicate::str::contains(
+            "Applying Skills: Codex · Demo 1/1",
+        ));
     manifest.assert_calls(1);
     database.assert_calls(1);
     skills.assert_calls(1);

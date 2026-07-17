@@ -40,8 +40,19 @@ pub struct SyncService {
     pub cancellation: CancellationToken,
 }
 
+struct SyncRunDetails {
+    outcome: SyncOutcome,
+    restored_skills: usize,
+}
+
 impl SyncService {
     pub async fn run(&mut self, request: SyncRequest) -> Result<SyncOutcome, AppError> {
+        self.run_with_details(request)
+            .await
+            .map(|details| details.outcome)
+    }
+
+    async fn run_with_details(&mut self, request: SyncRequest) -> Result<SyncRunDetails, AppError> {
         let started = Instant::now();
         let result = self.run_inner(request, started).await;
         if let Err(error) = &result {
@@ -64,7 +75,7 @@ impl SyncService {
         &mut self,
         request: SyncRequest,
         started: Instant,
-    ) -> Result<SyncOutcome, AppError> {
+    ) -> Result<SyncRunDetails, AppError> {
         let source = self
             .catalog
             .resolve(request.source_name.as_deref())?
@@ -94,7 +105,9 @@ impl SyncService {
             Arc::clone(&self.progress),
             backup_config,
         );
-        let restored = restore.apply(snapshot, &lock, &source_name)?;
+        let restored = restore.apply_with_details(snapshot, &lock, &source_name)?;
+        let restored_skills = restored.restored_skills;
+        let restored = restored.outcome;
 
         let settings_path = self.paths.cc_switch_dir.join("settings.json");
         let mut settings = DeviceSettings::load(&settings_path)?;
@@ -131,12 +144,15 @@ impl SyncService {
             snapshot_id: snapshot_id.clone(),
         });
 
-        Ok(SyncOutcome {
-            source_name,
-            snapshot_id,
-            backup_dir: restored.backup_dir,
-            projection,
-            duration,
+        Ok(SyncRunDetails {
+            outcome: SyncOutcome {
+                source_name,
+                snapshot_id,
+                backup_dir: restored.backup_dir,
+                projection,
+                duration,
+            },
+            restored_skills,
         })
     }
 }
@@ -158,9 +174,14 @@ pub async fn run_cli(
         progress,
         cancellation,
     };
-    let outcome = service.run(SyncRequest { source_name }).await?;
-    println!("{}", render_outcome(translator, &outcome));
-    Ok(outcome)
+    let details = service
+        .run_with_details(SyncRequest { source_name })
+        .await?;
+    println!(
+        "{}",
+        render_outcome(translator, &details.outcome, details.restored_skills)
+    );
+    Ok(details.outcome)
 }
 
 pub struct CliProgress {
@@ -293,18 +314,25 @@ impl ProgressSink for CliProgress {
             return;
         };
         if self.tty {
-            let terminal = matches!(
-                event,
-                ProgressEvent::Completed { .. }
-                    | ProgressEvent::Failed { .. }
-                    | ProgressEvent::Warning { .. }
-            );
-            if terminal {
-                eprintln!("\r\x1b[2K{line}");
-            } else {
+            if rewrites_current_line(&event) {
                 eprint!("\r\x1b[2K{line}");
                 let _ = std::io::stderr().flush();
+            } else {
+                eprintln!("\r\x1b[2K{line}");
             }
+        } else {
+            eprintln!("{line}");
+        }
+    }
+
+    fn emit_restored_skills(&self, total: usize) {
+        let line = format!(
+            "{}: {total}",
+            Translator::new(self.language)
+                .text(MessageKey::ProgressRestoringSkills, &MessageArgs::default(),)
+        );
+        if self.tty {
+            eprintln!("\r\x1b[2K{line}");
         } else {
             eprintln!("{line}");
         }
@@ -317,15 +345,22 @@ impl ProgressSink for CliProgress {
                 .text(MessageKey::ProgressApplyingSkills, &MessageArgs::default())
         );
         if self.tty {
-            eprint!("\r\x1b[2K{line}");
-            let _ = std::io::stderr().flush();
+            eprintln!("\r\x1b[2K{line}");
         } else {
             eprintln!("{line}");
         }
     }
 }
 
-fn render_outcome(translator: &Translator, outcome: &SyncOutcome) -> String {
+fn rewrites_current_line(event: &ProgressEvent) -> bool {
+    matches!(event, ProgressEvent::Downloading { .. })
+}
+
+fn render_outcome(
+    translator: &Translator,
+    outcome: &SyncOutcome,
+    restored_skills: usize,
+) -> String {
     let mut args = MessageArgs::default();
     args.0.insert("source", outcome.source_name.clone());
     args.0.insert("snapshot", outcome.snapshot_id.clone());
@@ -337,6 +372,7 @@ fn render_outcome(translator: &Translator, outcome: &SyncOutcome) -> String {
         "applied",
         outcome.projection.applied_agents.len().to_string(),
     );
+    args.0.insert("skills", restored_skills.to_string());
     args.0
         .insert("warnings", outcome.projection.warnings.len().to_string());
     let backup = outcome.backup_dir.as_ref().map_or_else(
@@ -424,4 +460,25 @@ fn set_private_file(path: &Path) -> Result<(), AppError> {
 #[cfg(not(unix))]
 fn set_private_file(_path: &Path) -> Result<(), AppError> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rewrites_current_line;
+    use crate::progress::ProgressEvent;
+
+    #[test]
+    fn tty_rewrites_only_download_progress() {
+        assert!(rewrites_current_line(&ProgressEvent::Downloading {
+            artifact: "db.sql".to_string(),
+            downloaded: 1,
+            total: 2,
+        }));
+        assert!(!rewrites_current_line(&ProgressEvent::RestoringSkills));
+        assert!(!rewrites_current_line(&ProgressEvent::ApplyingSkills {
+            agent: "Codex".to_string(),
+            completed: 1,
+            total: 1,
+        }));
+    }
 }

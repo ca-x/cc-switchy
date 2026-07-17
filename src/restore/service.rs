@@ -58,6 +58,11 @@ pub struct RestoreOutcome {
     pub skills_path: PathBuf,
 }
 
+pub(crate) struct RestoreDetails {
+    pub outcome: RestoreOutcome,
+    pub restored_skills: usize,
+}
+
 pub struct RestoreService {
     paths: AppPaths,
     progress: Arc<dyn ProgressSink>,
@@ -80,9 +85,19 @@ impl RestoreService {
     pub fn apply(
         &self,
         snapshot: DownloadedSnapshot,
-        _lock: &SyncLockGuard,
+        lock: &SyncLockGuard,
         source: &str,
     ) -> Result<RestoreOutcome, AppError> {
+        self.apply_with_details(snapshot, lock, source)
+            .map(|details| details.outcome)
+    }
+
+    pub(crate) fn apply_with_details(
+        &self,
+        snapshot: DownloadedSnapshot,
+        _lock: &SyncLockGuard,
+        source: &str,
+    ) -> Result<RestoreDetails, AppError> {
         let result = self.apply_inner(&snapshot, source);
         cleanup_downloaded_files(&snapshot);
         result
@@ -92,9 +107,10 @@ impl RestoreService {
         &self,
         snapshot: &DownloadedSnapshot,
         source: &str,
-    ) -> Result<RestoreOutcome, AppError> {
+    ) -> Result<RestoreDetails, AppError> {
         let skills_path = resolve_skills_path(&self.paths)?;
         let prepared_skills = prepare_skills(&snapshot.skills_zip_path)?;
+        let restored_skills = count_skill_directories(prepared_skills.extracted_dir.path())?;
         let database_path = self.paths.cc_switch_dir.join("cc-switch.db");
         let prepared_database = prepare_database(
             &snapshot.db_sql_path,
@@ -115,7 +131,7 @@ impl RestoreService {
             None
         };
 
-        self.progress.emit(ProgressEvent::RestoringSkills);
+        self.progress.emit_restored_skills(restored_skills);
         if let Err(restore_error) =
             install_prepared_skills(prepared_skills.extracted_dir.path(), &skills_path)
         {
@@ -151,12 +167,32 @@ impl RestoreService {
             )));
         }
 
-        Ok(RestoreOutcome {
-            backup_dir: backup.map(|backup| backup.backup_dir),
-            database_path,
-            skills_path,
+        Ok(RestoreDetails {
+            outcome: RestoreOutcome {
+                backup_dir: backup.map(|backup| backup.backup_dir),
+                database_path,
+                skills_path,
+            },
+            restored_skills,
         })
     }
+}
+
+fn count_skill_directories(root: &Path) -> Result<usize, AppError> {
+    let mut count = 0;
+    for entry in fs::read_dir(root).map_err(|error| AppError::io(root, error))? {
+        let entry = entry.map_err(|error| AppError::io(root, error))?;
+        let path = entry.path();
+        if entry
+            .file_type()
+            .map_err(|error| AppError::io(&path, error))?
+            .is_dir()
+            && path.join("SKILL.md").is_file()
+        {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn rollback_unavailable(error: AppError) -> AppError {

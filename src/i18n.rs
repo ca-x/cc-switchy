@@ -227,6 +227,7 @@ impl Translator {
         let snapshot = || message_arg(_args, "snapshot");
         let duration = || message_arg(_args, "duration");
         let applied = || message_arg(_args, "applied");
+        let skills = || message_arg(_args, "skills");
         let warnings = || message_arg(_args, "warnings");
         let backup = || message_arg(_args, "backup");
         let agent = || message_arg(_args, "agent");
@@ -291,10 +292,11 @@ impl Translator {
             (Language::ZhCn, MessageKey::ProgressCompleted) => "同步完成",
             (Language::ZhCn, MessageKey::SyncSummary) => {
                 return format!(
-                    "同步成功\n来源：{}\n快照：{}\n耗时：{}\n应用步骤：{}\n警告：{}\n备份：{}",
+                    "同步成功\n来源：{}\n快照：{}\n耗时：{}\n恢复 Skills：{}\n应用步骤：{}\n警告：{}\n备份：{}",
                     source(),
                     snapshot(),
                     duration(),
+                    skills(),
                     applied(),
                     warnings(),
                     backup()
@@ -583,10 +585,11 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::ProgressCompleted) => "Sync completed",
             (Language::Auto | Language::EnUs, MessageKey::SyncSummary) => {
                 return format!(
-                    "Sync succeeded\nSource: {}\nSnapshot: {}\nDuration: {}\nApplied steps: {}\nWarnings: {}\nBackup: {}",
+                    "Sync succeeded\nSource: {}\nSnapshot: {}\nDuration: {}\nRestored Skills: {}\nApplied steps: {}\nWarnings: {}\nBackup: {}",
                     source(),
                     snapshot(),
                     duration(),
+                    skills(),
                     applied(),
                     warnings(),
                     backup()
