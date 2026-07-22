@@ -121,7 +121,10 @@ pub enum MessageKey {
     TuiNotTested,
     TuiCurrent,
     TuiAvailable,
-    TuiAdditiveSet,
+    TuiEnabled,
+    TuiDisabled,
+    TuiEnabledProviderCount,
+    TuiNoProvidersShort,
     TuiCategory,
     TuiUnmanaged,
     TuiBytes,
@@ -243,6 +246,7 @@ impl Translator {
         let backup = || message_arg(_args, "backup");
         let agent = || message_arg(_args, "agent");
         let provider = || message_arg(_args, "provider");
+        let count = || message_arg(_args, "count");
         let text = match (self.language, key) {
             (Language::ZhCn, MessageKey::NoSourceConfigured) => "尚未配置来源。",
             (Language::ZhCn, MessageKey::RunWizard) => "请运行：cc-switchy --wizard",
@@ -349,7 +353,12 @@ impl Translator {
             (Language::ZhCn, MessageKey::TuiNotTested) => "尚未测试",
             (Language::ZhCn, MessageKey::TuiCurrent) => "当前",
             (Language::ZhCn, MessageKey::TuiAvailable) => "可用",
-            (Language::ZhCn, MessageKey::TuiAdditiveSet) => "累加式受管集合",
+            (Language::ZhCn, MessageKey::TuiEnabled) => "已启用",
+            (Language::ZhCn, MessageKey::TuiDisabled) => "未启用",
+            (Language::ZhCn, MessageKey::TuiEnabledProviderCount) => {
+                return format!("{} 个已启用", count());
+            }
+            (Language::ZhCn, MessageKey::TuiNoProvidersShort) => "无供应商",
             (Language::ZhCn, MessageKey::TuiCategory) => "分类",
             (Language::ZhCn, MessageKey::TuiUnmanaged) => "未受管",
             (Language::ZhCn, MessageKey::TuiBytes) => "字节",
@@ -673,7 +682,12 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::TuiNotTested) => "Not tested",
             (Language::Auto | Language::EnUs, MessageKey::TuiCurrent) => "current",
             (Language::Auto | Language::EnUs, MessageKey::TuiAvailable) => "available",
-            (Language::Auto | Language::EnUs, MessageKey::TuiAdditiveSet) => "additive managed set",
+            (Language::Auto | Language::EnUs, MessageKey::TuiEnabled) => "enabled",
+            (Language::Auto | Language::EnUs, MessageKey::TuiDisabled) => "disabled",
+            (Language::Auto | Language::EnUs, MessageKey::TuiEnabledProviderCount) => {
+                return format!("{} enabled", count());
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiNoProvidersShort) => "No providers",
             (Language::Auto | Language::EnUs, MessageKey::TuiCategory) => "Category",
             (Language::Auto | Language::EnUs, MessageKey::TuiUnmanaged) => "unmanaged",
             (Language::Auto | Language::EnUs, MessageKey::TuiBytes) => "bytes",

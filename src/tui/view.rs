@@ -44,8 +44,24 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let args = MessageArgs::default();
     let agent = app.selected_agent();
     let agent_name = truncate_to_width(&agent.to_string(), 18);
-    let provider = if agent.is_additive() {
-        translator.text(MessageKey::TuiAdditiveSet, &args)
+    let providers = app
+        .providers
+        .get(&agent)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let provider = if providers.is_empty() {
+        translator.text(MessageKey::TuiNoProvidersShort, &args)
+    } else if agent.is_additive() {
+        let mut provider_args = MessageArgs::default();
+        provider_args.0.insert(
+            "count",
+            providers
+                .iter()
+                .filter(|provider| provider.managed)
+                .count()
+                .to_string(),
+        );
+        translator.text(MessageKey::TuiEnabledProviderCount, &provider_args)
     } else {
         app.current_provider()
             .map(|provider| provider.name.clone())
@@ -242,13 +258,20 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|(index, provider)| {
             let selected = index == cursor.selected;
             let state = if agent.is_additive() {
-                translator.text(MessageKey::TuiAdditiveSet, &args)
+                translator.text(
+                    if provider.managed {
+                        MessageKey::TuiEnabled
+                    } else {
+                        MessageKey::TuiDisabled
+                    },
+                    &args,
+                )
             } else if provider.is_current {
                 translator.text(MessageKey::TuiCurrent, &args)
             } else {
                 translator.text(MessageKey::TuiAvailable, &args)
             };
-            let unmanaged = if provider.managed {
+            let unmanaged = if agent.is_additive() || provider.managed {
                 String::new()
             } else {
                 format!(" · {}", translator.text(MessageKey::TuiUnmanaged, &args))
@@ -256,7 +279,7 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
             ListItem::new(format!(
                 "{} {}  {}  · {state}{unmanaged}",
                 if selected { "›" } else { " " },
-                if agent.is_additive() || provider.is_current {
+                if (agent.is_additive() && provider.managed) || provider.is_current {
                     "●"
                 } else {
                     "○"
@@ -289,7 +312,18 @@ fn render_provider_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
         },
         |provider| {
             let status = if app.selected_agent().is_additive() {
-                format!("● {}", translator.text(MessageKey::TuiAdditiveSet, &args))
+                format!(
+                    "{} {}",
+                    if provider.managed { "●" } else { "○" },
+                    translator.text(
+                        if provider.managed {
+                            MessageKey::TuiEnabled
+                        } else {
+                            MessageKey::TuiDisabled
+                        },
+                        &args,
+                    )
+                )
             } else if provider.is_current {
                 format!("● {}", translator.text(MessageKey::TuiCurrent, &args))
             } else {

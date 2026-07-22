@@ -634,9 +634,50 @@ fn primary_navigation_and_status_header_center_switching_and_sync() {
         .iter()
         .position(|agent| *agent == Agent::OpenCode)
         .expect("OpenCode Agent");
+    app.providers
+        .get_mut(&Agent::OpenCode)
+        .expect("OpenCode providers")
+        .push(ViewProvider {
+            id: "open-disabled".to_string(),
+            name: "Open Disabled".to_string(),
+            category: None,
+            is_current: false,
+            managed: false,
+        });
     let additive = draw(&app, 140, 36);
-    assert!(additive.contains("Provider  additive managed set"));
+    assert!(additive.contains("Provider  1 enabled"));
     assert!(!additive.contains("Provider  OpenCode A"));
+    assert!(additive.contains("Open Managed  · enabled"));
+    assert!(additive.contains("Open Disabled  · disabled"));
+    assert!(!additive.contains("additive managed set"));
+
+    app.provider_cursors.insert(
+        Agent::OpenCode,
+        CursorState {
+            selected: 1,
+            scroll: 0,
+        },
+    );
+    app.focus = FocusPane::Details;
+    let disabled_details = draw(&app, 140, 36);
+    assert!(disabled_details.contains("Open Disabled"));
+    assert!(disabled_details.contains("○ disabled"));
+
+    app.selected_agent = app
+        .agents
+        .iter()
+        .position(|agent| *agent == Agent::OpenClaw)
+        .expect("OpenClaw Agent");
+    let empty = draw(&app, 140, 36);
+    assert!(empty.contains("Provider  No providers"));
+
+    app.selected_agent = app
+        .agents
+        .iter()
+        .position(|agent| *agent == Agent::ClaudeDesktop)
+        .expect("Claude Desktop Agent");
+    let exclusive_empty = draw(&app, 140, 36);
+    assert!(exclusive_empty.contains("Provider  No providers"));
 }
 
 #[test]
@@ -723,6 +764,43 @@ fn chinese_tui_and_wizard_render_localized_system_labels() {
     assert!(compact_providers.contains("供应商"));
     assert!(compact_providers.contains("详情"));
     assert!(!providers.contains("unmanaged"));
+
+    app.selected_agent = app
+        .agents
+        .iter()
+        .position(|agent| *agent == Agent::OpenCode)
+        .expect("OpenCode Agent");
+    app.providers
+        .get_mut(&Agent::OpenCode)
+        .expect("OpenCode providers")
+        .push(ViewProvider {
+            id: "open-disabled".to_string(),
+            name: "Open Disabled".to_string(),
+            category: None,
+            is_current: false,
+            managed: false,
+        });
+    app.provider_cursors.insert(
+        Agent::OpenCode,
+        CursorState {
+            selected: 1,
+            scroll: 0,
+        },
+    );
+    let additive = draw(&app, 140, 36).replace(' ', "");
+    assert!(additive.contains("供应商1个已启用"));
+    assert!(additive.contains("OpenManaged·已启用"));
+    assert!(additive.contains("OpenDisabled·未启用"));
+    assert!(additive.contains("○未启用"));
+    assert!(!additive.contains("累加式受管集合"));
+
+    app.selected_agent = app
+        .agents
+        .iter()
+        .position(|agent| *agent == Agent::OpenClaw)
+        .expect("OpenClaw Agent");
+    let empty = draw(&app, 140, 36).replace(' ', "");
+    assert!(empty.contains("供应商无供应商"));
 
     app.view = MainView::Skills;
     assert!(draw(&app, 100, 30).replace(' ', "").contains("技能"));
