@@ -77,6 +77,8 @@ fn provider_database(home: &TempDir) -> std::path::PathBuf {
                  ('claude-b', 'claude', 'Claude B', '{"env":{"ANTHROPIC_AUTH_TOKEN":"claude-b"}}', 2, 2, '{}', 0),
                  ('codex-a', 'codex', 'Codex A', '{"auth":{"OPENAI_API_KEY":"codex-a"},"config":"model_provider = \"a\"\n[model_providers.a]\nbase_url = \"https://a.example/v1\"\n"}', 1, 1, '{}', 1),
                  ('gemini-a', 'gemini', 'Gemini A', '{"env":{"GEMINI_API_KEY":"gemini-a"},"config":{"theme":"system"}}', 1, 1, '{}', 1),
+                 ('grok-a', 'grokbuild', 'Grok A', '{"config":"[models]\ndefault = \"grok-a\"\n[model.\"grok-a\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://grok-a.example/v1\"\nname = \"Grok A\"\napi_key = \"grok-a-key\"\napi_backend = \"responses\"\ncontext_window = 500000\n"}', 1, 1, '{}', 1),
+                 ('grok-b', 'grokbuild', 'Grok B', '{"config":"[models]\ndefault = \"grok-b\"\n[model.\"grok-b\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://grok-b.example/v1\"\nname = \"Grok B\"\nenv_key = \"XAI_API_KEY\"\napi_backend = \"responses\"\ncontext_window = 500000\n"}', 2, 2, '{}', 0),
                  ('opencode-managed', 'opencode', 'OpenCode Managed', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://managed.example/v1"}}', 1, 1, '{}', 0),
                  ('opencode-db-only', 'opencode', 'OpenCode DB Only', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://skip.example/v1"}}', 2, 2, '{"liveConfigManaged":false}', 0),
                  ('openclaw-managed', 'openclaw', 'OpenClaw Managed', '{"baseUrl":"https://claw.example/v1","api":"openai-responses","models":[]}', 1, 1, '{}', 0),
@@ -97,11 +99,12 @@ fn mcp_database(home: &TempDir) -> std::path::PathBuf {
             r#"DELETE FROM mcp_servers;
                INSERT INTO mcp_servers (
                  id, name, server_config, tags,
-                 enabled_claude, enabled_codex, enabled_gemini, enabled_opencode, enabled_hermes
+                 enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild,
+                 enabled_opencode, enabled_hermes
                ) VALUES
-                 ('stdio-managed', 'Managed stdio', '{"type":"stdio","command":"npx","args":["-y","mcp-demo"],"env":{"TOKEN":"value"}}', '[]', 1, 1, 1, 1, 1),
-                 ('remote-managed', 'Managed remote', '{"type":"http","url":"https://mcp.example.test/api","headers":{"Authorization":"Bearer test"}}', '[]', 0, 1, 1, 1, 1),
-                 ('known-disabled', 'Known disabled', '{"type":"sse","url":"https://disabled.example.test/sse"}', '[]', 0, 0, 0, 0, 0);"#,
+                 ('stdio-managed', 'Managed stdio', '{"type":"stdio","command":"npx","args":["-y","mcp-demo"],"env":{"TOKEN":"value"}}', '[]', 1, 1, 1, 1, 1, 1),
+                 ('remote-managed', 'Managed remote', '{"type":"http","url":"https://mcp.example.test/api","headers":{"Authorization":"Bearer test"}}', '[]', 0, 1, 1, 1, 1, 1),
+                 ('known-disabled', 'Known disabled', '{"type":"sse","url":"https://disabled.example.test/sse"}', '[]', 0, 0, 0, 0, 0, 0);"#,
         )
         .expect("MCP rows");
     path
@@ -115,11 +118,11 @@ fn skills_database(home: &TempDir) -> std::path::PathBuf {
             "DELETE FROM skills;
              INSERT INTO skills (
                id, name, directory, enabled_claude, enabled_codex, enabled_gemini,
-               enabled_opencode, enabled_hermes, installed_at, updated_at
+               enabled_grokbuild, enabled_opencode, enabled_hermes, installed_at, updated_at
              ) VALUES
-               ('good', 'Good Skill', 'good', 1, 1, 1, 1, 1, 1, 1),
-               ('disabled', 'Disabled Skill', 'disabled', 0, 0, 0, 0, 0, 1, 1),
-               ('bad', 'Bad Skill', 'bad', 1, 0, 0, 0, 0, 1, 1);",
+               ('good', 'Good Skill', 'good', 1, 1, 1, 1, 1, 1, 1, 1),
+               ('disabled', 'Disabled Skill', 'disabled', 0, 0, 0, 0, 0, 0, 1, 1),
+               ('bad', 'Bad Skill', 'bad', 1, 0, 0, 0, 0, 0, 1, 1);",
         )
         .expect("Skill rows");
     path
@@ -174,6 +177,102 @@ fn repository_reads_mcp_skills_and_settings() {
         repo.setting("fixtureSetting").expect("setting").as_deref(),
         Some("fixture-value")
     );
+}
+
+#[test]
+fn repository_reads_pre_grok_enablement_columns_without_mutating_the_database() {
+    let home = TempDir::new().expect("home");
+    let path = home.path().join("legacy.db");
+    let connection = Connection::open(&path).expect("database");
+    connection
+        .execute_batch(
+            "CREATE TABLE providers (
+                id TEXT NOT NULL,
+                app_type TEXT NOT NULL,
+                name TEXT NOT NULL,
+                settings_config TEXT NOT NULL,
+                meta TEXT NOT NULL DEFAULT '{}',
+                is_current BOOLEAN NOT NULL DEFAULT 0,
+                PRIMARY KEY (id, app_type)
+             );
+             CREATE TABLE mcp_servers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                server_config TEXT NOT NULL,
+                description TEXT,
+                homepage TEXT,
+                docs TEXT,
+                tags TEXT NOT NULL DEFAULT '[]',
+                enabled_claude BOOLEAN NOT NULL DEFAULT 0,
+                enabled_codex BOOLEAN NOT NULL DEFAULT 0,
+                enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+                enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
+                enabled_hermes BOOLEAN NOT NULL DEFAULT 0
+             );
+             CREATE TABLE skills (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                directory TEXT NOT NULL,
+                repo_owner TEXT,
+                repo_name TEXT,
+                repo_branch TEXT,
+                readme_url TEXT,
+                enabled_claude BOOLEAN NOT NULL DEFAULT 0,
+                enabled_codex BOOLEAN NOT NULL DEFAULT 0,
+                enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+                enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
+                enabled_hermes BOOLEAN NOT NULL DEFAULT 0,
+                installed_at INTEGER NOT NULL DEFAULT 0,
+                content_hash TEXT,
+                updated_at INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO mcp_servers (
+                id, name, server_config, enabled_codex
+             ) VALUES ('legacy-mcp', 'Legacy MCP', '{}', 1);
+             INSERT INTO skills (
+                id, name, directory, enabled_codex, installed_at, updated_at
+             ) VALUES ('legacy-skill', 'Legacy Skill', 'legacy-skill', 1, 1, 1);",
+        )
+        .expect("legacy schema");
+    drop(connection);
+
+    let repository = AgentRepository::open(&path).expect("repository");
+    let mcp = repository.mcp_servers().expect("legacy MCP rows");
+    let skills = repository.installed_skills().expect("legacy Skill rows");
+    assert!(mcp[0].apps.codex);
+    assert!(!mcp[0].apps.grokbuild);
+    assert!(skills[0].apps.codex);
+    assert!(!skills[0].apps.grokbuild);
+    drop(repository);
+
+    let connection = Connection::open(&path).expect("reopen database");
+    for table in ["mcp_servers", "skills"] {
+        let columns = connection
+            .prepare(&format!("PRAGMA table_info(\"{table}\")"))
+            .expect("table info")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("column rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("columns");
+        assert!(!columns.contains(&"enabled_grokbuild".to_string()));
+    }
+    let mcp_flag: i64 = connection
+        .query_row(
+            "SELECT enabled_codex FROM mcp_servers WHERE id='legacy-mcp'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("MCP flags");
+    let skill_flag: i64 = connection
+        .query_row(
+            "SELECT enabled_codex FROM skills WHERE id='legacy-skill'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("Skill flags");
+    assert_eq!(mcp_flag, 1);
+    assert_eq!(skill_flag, 1);
 }
 
 #[test]
@@ -243,6 +342,32 @@ fn device_settings_resolve_overrides_skills_and_sync_method() {
     assert_eq!(settings.skill_sync_method(), SkillSyncMethod::Copy);
 }
 
+#[test]
+fn grok_build_is_an_exclusive_agent_with_mcp_and_skills() {
+    let home = TempDir::new().expect("home");
+    let settings_path = home.path().join("settings.json");
+    fs::write(
+        &settings_path,
+        r#"{"grokConfigDir":"~/custom-grok","currentProviderGrokbuild":"grok-main"}"#,
+    )
+    .expect("settings");
+    let settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+
+    assert_eq!(Agent::GrokBuild.db_key(), "grokbuild");
+    assert!(!Agent::GrokBuild.is_additive());
+    assert!(Agent::GrokBuild.supports_mcp());
+    assert!(Agent::GrokBuild.supports_skills());
+    assert_eq!(
+        settings.current_provider(Agent::GrokBuild),
+        Some("grok-main")
+    );
+    assert_eq!(
+        paths.config_dir(Agent::GrokBuild).expect("Grok path"),
+        home.path().join("custom-grok")
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn claude_desktop_does_not_invent_a_linux_path() {
@@ -283,7 +408,7 @@ fn provider_projection_writes_exclusive_agents_and_merges_additive_agents() {
     fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
     fs::write(
         &settings_path,
-        r#"{"currentProviderClaude":"claude-a","currentProviderCodex":"codex-a","currentProviderGemini":"gemini-a"}"#,
+        r#"{"currentProviderClaude":"claude-a","currentProviderCodex":"codex-a","currentProviderGemini":"gemini-a","currentProviderGrokbuild":"grok-a"}"#,
     )
     .expect("settings");
     let opencode_path = home.path().join(".config/opencode/opencode.json");
@@ -322,6 +447,9 @@ fn provider_projection_writes_exclusive_agents_and_merges_additive_agents() {
     assert!(fs::read_to_string(home.path().join(".gemini/.env"))
         .expect("Gemini env")
         .contains("GEMINI_API_KEY=gemini-a"));
+    assert!(fs::read_to_string(home.path().join(".grok/config.toml"))
+        .expect("Grok config")
+        .contains("https://grok-a.example/v1"));
     let opencode: serde_json::Value =
         serde_json::from_slice(&fs::read(&opencode_path).expect("OpenCode output"))
             .expect("OpenCode JSON");
@@ -517,6 +645,148 @@ fn manual_exclusive_switch_updates_device_database_and_live_config() {
 }
 
 #[test]
+fn grok_switch_backfills_live_config_without_database_owned_mcp() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "INSERT INTO mcp_servers (
+                id, name, server_config, enabled_grokbuild
+             ) VALUES (
+                'known-disabled', 'Known disabled',
+                '{\"type\":\"stdio\",\"command\":\"managed\"}', 0
+             )",
+            [],
+        )
+        .expect("disabled Grok MCP");
+    drop(connection);
+    let settings_path = home.path().join(".cc-switch/settings.json");
+    fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
+    fs::write(&settings_path, r#"{"currentProviderGrokbuild":"grok-a"}"#).expect("settings");
+    let grok_path = home.path().join(".grok/config.toml");
+    fs::create_dir_all(grok_path.parent().expect("Grok parent")).expect("Grok dir");
+    fs::write(
+        &grok_path,
+        "[models]\ndefault = \"grok-a\"\n[model.\"grok-a\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://local-drift.example/v1\"\nname = \"Local Drift\"\napi_key = \"local\"\napi_backend = \"responses\"\ncontext_window = 500000\n[mcp_servers.user-owned]\ncommand = \"local\"\n[mcp_servers.known-disabled]\ncommand = \"stale\"\n",
+    )
+    .expect("live Grok config");
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+        .switch_exclusive(Agent::GrokBuild, "grok-b")
+        .expect("switch Grok Build");
+
+    assert_eq!(
+        repo.database_current_provider(Agent::GrokBuild)
+            .expect("database current")
+            .as_deref(),
+        Some("grok-b")
+    );
+    let stored = repo
+        .provider(Agent::GrokBuild, "grok-a")
+        .expect("provider")
+        .expect("Grok A");
+    let stored_config = stored
+        .settings_config
+        .get("config")
+        .and_then(serde_json::Value::as_str)
+        .expect("stored config");
+    assert!(stored_config.contains("local-drift.example"));
+    assert!(!stored_config.contains("mcp_servers"));
+    let live = fs::read_to_string(&grok_path).expect("new Grok live config");
+    assert!(live.contains("https://grok-b.example/v1"));
+    assert!(live.contains("[mcp_servers.user-owned]"));
+    assert!(live.contains("command = \"local\""));
+    assert!(!live.contains("known-disabled"));
+}
+
+#[test]
+fn grok_official_provider_accepts_an_empty_live_config() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "UPDATE providers
+             SET settings_config = '{\"config\":\"\"}', category = 'official'
+             WHERE id = 'grok-a' AND app_type = 'grokbuild'",
+            [],
+        )
+        .expect("official provider");
+    drop(connection);
+    let mut settings = DeviceSettings::default();
+    settings.set_current_provider(Agent::GrokBuild, Some("grok-a"));
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+        .project_agent(Agent::GrokBuild)
+        .expect("project official Grok Build");
+
+    assert_eq!(
+        fs::read_to_string(home.path().join(".grok/config.toml")).expect("Grok config"),
+        ""
+    );
+}
+
+#[test]
+fn failed_grok_switch_restores_live_device_and_database_state() {
+    let home = TempDir::new().expect("home");
+    let db_path = provider_database(&home);
+    let connection = Connection::open(&db_path).expect("database");
+    connection
+        .execute(
+            "UPDATE providers SET settings_config='{\"config\":\"[broken\"}'
+             WHERE id='grok-b' AND app_type='grokbuild'",
+            [],
+        )
+        .expect("invalid target");
+    drop(connection);
+    let settings_path = home.path().join(".cc-switch/settings.json");
+    fs::create_dir_all(settings_path.parent().expect("settings parent")).expect("settings dir");
+    let original_settings = br#"{"currentProviderGrokbuild":"grok-a","localOnly":true}"#;
+    fs::write(&settings_path, original_settings).expect("settings");
+    let grok_path = home.path().join(".grok/config.toml");
+    fs::create_dir_all(grok_path.parent().expect("Grok parent")).expect("Grok dir");
+    let original_live = b"[models]\ndefault = \"grok-a\"\n[model.\"grok-a\"]\nmodel = \"grok-4.5\"\nbase_url = \"https://local.example/v1\"\nname = \"Local\"\napi_key = \"local\"\napi_backend = \"responses\"\ncontext_window = 500000\n";
+    fs::write(&grok_path, original_live).expect("live Grok config");
+    let mut settings = DeviceSettings::load(&settings_path).expect("device settings");
+    let paths = AgentPaths::from_settings(home.path(), &settings);
+    let mut repo = AgentRepository::open(&db_path).expect("repository");
+
+    assert!(
+        ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
+            .switch_exclusive(Agent::GrokBuild, "grok-b")
+            .is_err()
+    );
+
+    assert_eq!(settings.current_provider(Agent::GrokBuild), Some("grok-a"));
+    assert_eq!(
+        fs::read(&settings_path).expect("settings rollback"),
+        original_settings
+    );
+    assert_eq!(fs::read(&grok_path).expect("live rollback"), original_live);
+    assert_eq!(
+        repo.database_current_provider(Agent::GrokBuild)
+            .expect("database current")
+            .as_deref(),
+        Some("grok-a")
+    );
+    let stored = repo
+        .provider(Agent::GrokBuild, "grok-a")
+        .expect("provider")
+        .expect("Grok A");
+    assert!(stored
+        .settings_config
+        .get("config")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|config| config.contains("grok-a.example")));
+}
+
+#[test]
 fn failed_manual_switch_restores_files_device_database_and_backfilled_provider() {
     let home = TempDir::new().expect("home");
     let db_path = provider_database(&home);
@@ -597,6 +867,13 @@ fn mcp_projection_preserves_unknown_entries_and_removes_known_disabled_entries()
         r#"{"theme":"keep","mcpServers":{"user-owned":{"command":"local"},"known-disabled":{"url":"old"}}}"#,
     )
     .expect("Gemini MCP");
+    let grok_dir = home.path().join(".grok");
+    fs::create_dir_all(&grok_dir).expect("Grok dir");
+    fs::write(
+        grok_dir.join("config.toml"),
+        "[models]\ndefault = \"keep\"\n[model.keep]\nmodel = \"grok-4.5\"\nbase_url = \"https://keep.example/v1\"\nname = \"Keep\"\napi_key = \"keep\"\napi_backend = \"responses\"\ncontext_window = 500000\n[mcp_servers.user-owned]\ncommand = \"local\"\n[mcp_servers.known-disabled]\nurl = \"https://old\"\n",
+    )
+    .expect("Grok MCP");
     let opencode_dir = home.path().join(".config/opencode");
     fs::create_dir_all(&opencode_dir).expect("OpenCode dir");
     fs::write(
@@ -648,6 +925,22 @@ fn mcp_projection_preserves_unknown_entries_and_removes_known_disabled_entries()
     assert!(gemini.pointer("/mcpServers/user-owned").is_some());
     assert!(gemini.pointer("/mcpServers/stdio-managed").is_some());
     assert!(gemini.pointer("/mcpServers/known-disabled").is_none());
+
+    let grok: toml::Value =
+        toml::from_str(&fs::read_to_string(grok_dir.join("config.toml")).expect("Grok output"))
+            .expect("Grok TOML");
+    assert_eq!(grok["models"]["default"].as_str(), Some("keep"));
+    assert!(grok["mcp_servers"].get("user-owned").is_some());
+    assert_eq!(
+        grok["mcp_servers"]["stdio-managed"]["command"].as_str(),
+        Some("npx")
+    );
+    assert!(grok["mcp_servers"]["stdio-managed"].get("type").is_none());
+    assert_eq!(
+        grok["mcp_servers"]["remote-managed"]["headers"]["Authorization"].as_str(),
+        Some("Bearer test")
+    );
+    assert!(grok["mcp_servers"].get("known-disabled").is_none());
 
     let opencode: serde_json::Value = serde_json::from_slice(
         &fs::read(opencode_dir.join("opencode.json")).expect("OpenCode output"),
@@ -762,6 +1055,12 @@ fn skills_copy_reconciles_managed_targets_and_preserves_unrelated_directories() 
         .iter()
         .any(|warning| warning.agent == Some(Agent::Claude)));
     assert!(report.applied_agents.contains(&Agent::Codex));
+    assert!(report.applied_agents.contains(&Agent::GrokBuild));
+    assert!(paths
+        .skills_dir(Agent::GrokBuild)
+        .expect("Grok Skills")
+        .join("good/SKILL.md")
+        .is_file());
     assert!(report.skipped_agents.contains(&Agent::ClaudeDesktop));
     assert!(report.skipped_agents.contains(&Agent::OpenClaw));
 }

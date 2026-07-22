@@ -152,6 +152,7 @@ impl App {
             Agent::Claude,
             Agent::Codex,
             Agent::Gemini,
+            Agent::GrokBuild,
             Agent::OpenCode,
             Agent::OpenClaw,
             Agent::Hermes,
@@ -200,6 +201,12 @@ impl App {
             .copied()
             .unwrap_or_default();
         self.providers.get(&agent)?.get(cursor.selected)
+    }
+
+    pub fn current_provider(&self) -> Option<&ViewProvider> {
+        let agent = self.selected_agent();
+        let providers = self.providers.get(&agent)?;
+        providers.iter().find(|provider| provider.is_current)
     }
 
     pub fn selected_source(&self) -> Option<&ViewSource> {

@@ -1,7 +1,7 @@
 # CC Switch v2 compatibility fixture
 
-This synthetic fixture is pinned to CC Switch `v3.17.0` at commit
-`3d176b98cc0bfd151a42882e88ab59b62083b92f`.
+This synthetic fixture is pinned to CC Switch `v3.18.0` at commit
+`a377d79303bc1e592d2783d559ca5bd6b8ba1417`.
 
 Upstream references used to verify it:
 
@@ -13,17 +13,17 @@ Upstream references used to verify it:
 
 The fixture intentionally contains:
 
-- an exclusive Codex provider and an additive OpenCode provider;
-- one stdio MCP server enabled for Codex and OpenCode;
+- exclusive Codex and Grok Build providers plus an additive OpenCode provider;
+- one stdio MCP server enabled for Codex, Grok Build, and OpenCode;
 - one enabled Skill and one disabled installed Skill;
 - a Skills archive containing the enabled `demo/SKILL.md` source;
 - the local-only tables used by restore-preservation tests;
-- the v13 `input_token_semantics` columns while retaining sync protocol db-v6.
+- the v16 user version and Grok enablement columns while retaining sync protocol db-v6.
 
 Verification commands:
 
 ```bash
-git -C /path/to/cc-switch checkout v3.17.0
+git -C /path/to/cc-switch checkout a377d79303bc1e592d2783d559ca5bd6b8ba1417
 cargo test --test protocol_compat committed_fixture -- --nocapture
 sha256sum tests/fixtures/cc-switch-v2/{manifest.json,db.sql,skills.zip}
 ```
@@ -31,8 +31,8 @@ sha256sum tests/fixtures/cc-switch-v2/{manifest.json,db.sql,skills.zip}
 Pinned file hashes:
 
 ```text
-0c6a5a7538311cf9ff5a226be7bb2106e88f9ff12d27463d38679de9db5dee44  manifest.json
-fc96f37bcfdb68090621afd38b2c6ed092f1f3de6b9beb69c37abf8c6d61767d  db.sql
+c98cb624c79b0c7ef172d712b8b04d3deec124a2da6e6e30a8328eebf2e94c2b  manifest.json
+afe943269c7740f8784a674a6869ae32230085759c8c90fa7faf843bde159d86  db.sql
 f356667d67f458c786ccd16d582c5d4ca7ecc0b0bbd10268b56f6720cb45c0de  skills.zip
 ```
 

@@ -7,12 +7,20 @@ use crate::AppError;
 
 pub struct AgentRepository {
     connection: Connection,
+    mcp_has_grok_flag: bool,
+    skills_have_grok_flag: bool,
 }
 
 impl AgentRepository {
     pub fn open(path: &Path) -> Result<Self, AppError> {
         let connection = Connection::open(path).map_err(database_error)?;
-        Ok(Self { connection })
+        let mcp_has_grok_flag = has_column(&connection, "mcp_servers", "enabled_grokbuild")?;
+        let skills_have_grok_flag = has_column(&connection, "skills", "enabled_grokbuild")?;
+        Ok(Self {
+            connection,
+            mcp_has_grok_flag,
+            skills_have_grok_flag,
+        })
     }
 
     pub fn providers(&self, agent: Agent) -> Result<Vec<Provider>, AppError> {
@@ -142,16 +150,19 @@ impl AgentRepository {
     }
 
     pub fn mcp_servers(&self) -> Result<Vec<McpServer>, AppError> {
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT id, name, server_config, description, homepage, docs, tags,
-                        enabled_claude, enabled_codex, enabled_gemini, enabled_opencode,
-                        enabled_hermes
-                 FROM mcp_servers
-                 ORDER BY name ASC, id ASC",
-            )
-            .map_err(database_error)?;
+        let grok_flag = if self.mcp_has_grok_flag {
+            "enabled_grokbuild"
+        } else {
+            "0 AS enabled_grokbuild"
+        };
+        let query = format!(
+            "SELECT id, name, server_config, description, homepage, docs, tags,
+                    enabled_claude, enabled_codex, enabled_gemini, {grok_flag},
+                    enabled_opencode, enabled_hermes
+             FROM mcp_servers
+             ORDER BY name ASC, id ASC"
+        );
+        let mut statement = self.connection.prepare(&query).map_err(database_error)?;
         let rows = statement
             .query_map([], |row| {
                 let server_json: String = row.get(2)?;
@@ -168,8 +179,9 @@ impl AgentRepository {
                         claude: row.get(7)?,
                         codex: row.get(8)?,
                         gemini: row.get(9)?,
-                        opencode: row.get(10)?,
-                        hermes: row.get(11)?,
+                        grokbuild: row.get(10)?,
+                        opencode: row.get(11)?,
+                        hermes: row.get(12)?,
                     },
                 })
             })
@@ -178,16 +190,20 @@ impl AgentRepository {
     }
 
     pub fn installed_skills(&self) -> Result<Vec<InstalledSkill>, AppError> {
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT id, name, description, directory, repo_owner, repo_name, repo_branch,
-                        readme_url, enabled_claude, enabled_codex, enabled_gemini,
-                        enabled_opencode, enabled_hermes, installed_at, content_hash, updated_at
-                 FROM skills
-                 ORDER BY name ASC, id ASC",
-            )
-            .map_err(database_error)?;
+        let grok_flag = if self.skills_have_grok_flag {
+            "enabled_grokbuild"
+        } else {
+            "0 AS enabled_grokbuild"
+        };
+        let query = format!(
+            "SELECT id, name, description, directory, repo_owner, repo_name, repo_branch,
+                    readme_url, enabled_claude, enabled_codex, enabled_gemini,
+                    {grok_flag}, enabled_opencode, enabled_hermes,
+                    installed_at, content_hash, updated_at
+             FROM skills
+             ORDER BY name ASC, id ASC"
+        );
+        let mut statement = self.connection.prepare(&query).map_err(database_error)?;
         let rows = statement
             .query_map([], |row| {
                 Ok(InstalledSkill {
@@ -203,12 +219,13 @@ impl AgentRepository {
                         claude: row.get(8)?,
                         codex: row.get(9)?,
                         gemini: row.get(10)?,
-                        opencode: row.get(11)?,
-                        hermes: row.get(12)?,
+                        grokbuild: row.get(11)?,
+                        opencode: row.get(12)?,
+                        hermes: row.get(13)?,
                     },
-                    installed_at: row.get(13)?,
-                    content_hash: row.get(14)?,
-                    updated_at: row.get(15)?,
+                    installed_at: row.get(14)?,
+                    content_hash: row.get(15)?,
+                    updated_at: row.get(16)?,
                 })
             })
             .map_err(database_error)?;
@@ -247,4 +264,14 @@ fn provider_from_row(row: &Row<'_>, agent: Agent) -> rusqlite::Result<Provider> 
 
 fn database_error(error: rusqlite::Error) -> AppError {
     AppError::Database(error.to_string())
+}
+
+fn has_column(connection: &Connection, table: &str, column: &str) -> Result<bool, AppError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
+            params![table, column],
+            |row| row.get(0),
+        )
+        .map_err(database_error)
 }

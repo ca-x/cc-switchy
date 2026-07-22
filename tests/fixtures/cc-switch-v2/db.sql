@@ -1,7 +1,7 @@
 -- CC Switch SQLite 导出
 -- fixture for cc-switchy compatibility tests
 PRAGMA foreign_keys=OFF;
-PRAGMA user_version=13;
+PRAGMA user_version=16;
 BEGIN TRANSACTION;
 CREATE TABLE providers (
     id TEXT NOT NULL,
@@ -31,6 +31,7 @@ CREATE TABLE mcp_servers (
     enabled_claude BOOLEAN NOT NULL DEFAULT 0,
     enabled_codex BOOLEAN NOT NULL DEFAULT 0,
     enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+    enabled_grokbuild BOOLEAN NOT NULL DEFAULT 0,
     enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
     enabled_hermes BOOLEAN NOT NULL DEFAULT 0
 );
@@ -47,6 +48,7 @@ CREATE TABLE skills (
     enabled_claude BOOLEAN NOT NULL DEFAULT 0,
     enabled_codex BOOLEAN NOT NULL DEFAULT 0,
     enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+    enabled_grokbuild BOOLEAN NOT NULL DEFAULT 0,
     enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
     enabled_hermes BOOLEAN NOT NULL DEFAULT 0,
     installed_at INTEGER NOT NULL DEFAULT 0,
@@ -61,22 +63,24 @@ CREATE TABLE provider_health (provider_id TEXT NOT NULL, app_type TEXT NOT NULL,
 INSERT INTO providers (id, app_type, name, settings_config, created_at, sort_index, meta, is_current)
 VALUES
     ('remote-provider', 'codex', 'Remote Provider', '{"api_key":"fixture-only"}', 1, 10, '{}', 1),
+    ('grok-provider', 'grokbuild', 'Grok Provider', '{"config":"[models]\ndefault = \"fixture\"\n[model.fixture]\nmodel = \"grok-4.5\"\nbase_url = \"https://fixture.example/v1\"\nname = \"Fixture\"\nenv_key = \"XAI_API_KEY\"\napi_backend = \"responses\"\ncontext_window = 500000\n"}', 2, 15, '{}', 1),
     ('additive-provider', 'opencode', 'Additive Provider', '{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"https://fixture.example/v1"}}', 2, 20, '{}', 0);
 INSERT INTO mcp_servers (
     id, name, server_config, tags,
-    enabled_claude, enabled_codex, enabled_gemini, enabled_opencode, enabled_hermes
+    enabled_claude, enabled_codex, enabled_gemini, enabled_grokbuild,
+    enabled_opencode, enabled_hermes
 )
 VALUES (
     'fixture-mcp', 'Fixture MCP',
     '{"type":"stdio","command":"fixture-mcp","args":["--stdio"]}',
-    '["fixture"]', 0, 1, 0, 1, 0
+    '["fixture"]', 0, 1, 0, 1, 1, 0
 );
 INSERT INTO skills (
     id, name, directory, enabled_claude, enabled_codex, enabled_gemini,
-    enabled_opencode, enabled_hermes, installed_at, updated_at
+    enabled_grokbuild, enabled_opencode, enabled_hermes, installed_at, updated_at
 )
 VALUES
-    ('demo', 'Demo', 'demo', 0, 1, 0, 1, 0, 1, 1),
-    ('disabled-demo', 'Disabled Demo', 'disabled-demo', 0, 0, 0, 0, 0, 1, 1);
+    ('demo', 'Demo', 'demo', 0, 1, 0, 1, 1, 0, 1, 1),
+    ('disabled-demo', 'Disabled Demo', 'disabled-demo', 0, 0, 0, 0, 0, 0, 1, 1);
 COMMIT;
 PRAGMA foreign_keys=ON;

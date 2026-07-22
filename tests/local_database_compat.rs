@@ -21,7 +21,13 @@ fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
     fs::copy(&source, &database).expect("copy real database");
 
     let mut repo = AgentRepository::open(&database).expect("open copied database");
-    for agent in [Agent::Claude, Agent::Codex, Agent::Gemini, Agent::OpenCode] {
+    for agent in [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Gemini,
+        Agent::GrokBuild,
+        Agent::OpenCode,
+    ] {
         assert!(
             !repo.providers(agent).expect("read providers").is_empty(),
             "expected at least one {agent} provider in the compatibility sample"
@@ -50,7 +56,7 @@ fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
         .expect("write temporary selections");
     }
     let mut settings = DeviceSettings::load(&settings_path).expect("temporary settings");
-    for agent in [Agent::Claude, Agent::Codex, Agent::Gemini] {
+    for agent in [Agent::Claude, Agent::Codex, Agent::Gemini, Agent::GrokBuild] {
         if settings.current_provider(agent).is_none()
             && repo
                 .database_current_provider(agent)
@@ -70,7 +76,13 @@ fn projects_a_real_cc_switch_database_only_into_a_temporary_home() {
     let report = ProviderProjector::new(&mut repo, &mut settings, &paths, Arc::new(NoopProgress))
         .project_all();
 
-    for agent in [Agent::Claude, Agent::Codex, Agent::Gemini, Agent::OpenCode] {
+    for agent in [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::Gemini,
+        Agent::GrokBuild,
+        Agent::OpenCode,
+    ] {
         assert!(
             report.applied_agents.contains(&agent),
             "real compatibility projection did not apply {agent}: {:?}",

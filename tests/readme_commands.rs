@@ -78,6 +78,9 @@ fn readme_documents_security_paths_results_and_release_targets() {
         "x86_64-apple-darwin",
         "aarch64-apple-darwin",
         "x86_64-pc-windows-msvc",
+        "Grok Build",
+        "SQLite schema v16",
+        "`1` Switch, `2` Sync",
     ] {
         assert!(readme.contains(required), "README is missing {required}");
     }

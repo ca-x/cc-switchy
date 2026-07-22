@@ -104,6 +104,7 @@ impl<'a> McpProjector<'a> {
                 &enabled,
                 identity_spec,
             ),
+            Agent::GrokBuild => self.project_grok(&known_ids, &enabled),
             Agent::OpenCode => self.project_json(
                 &self
                     .paths
@@ -183,6 +184,45 @@ impl<'a> McpProjector<'a> {
         for server in enabled {
             let validated = validate_spec(&server.server)?;
             servers.insert(&server.id, Item::Table(to_codex_table(&validated)?));
+        }
+        if servers.is_empty() {
+            document.as_table_mut().remove("mcp_servers");
+        }
+        atomic_write(&path, document.to_string().as_bytes())
+    }
+
+    fn project_grok(
+        &self,
+        known_ids: &HashSet<&str>,
+        enabled: &[&McpServer],
+    ) -> Result<(), AppError> {
+        let path = self.paths.config_dir(Agent::GrokBuild)?.join("config.toml");
+        let text = if path.is_file() {
+            fs::read_to_string(&path).map_err(|error| AppError::io(&path, error))?
+        } else {
+            String::new()
+        };
+        let mut document = if text.trim().is_empty() {
+            DocumentMut::new()
+        } else {
+            text.parse::<DocumentMut>().map_err(|error| {
+                AppError::Restore(format!("invalid {}: {error}", path.display()))
+            })?
+        };
+
+        if let Some(mcp) = document.get_mut("mcp").and_then(Item::as_table_like_mut) {
+            mcp.remove("servers");
+        }
+        if !document.contains_key("mcp_servers") {
+            document["mcp_servers"] = Item::Table(Table::new());
+        }
+        let servers = document["mcp_servers"].as_table_mut().ok_or_else(|| {
+            AppError::Restore("Grok Build mcp_servers must be a TOML table".to_string())
+        })?;
+        servers.retain(|id, _| !known_ids.contains(id));
+        for server in enabled {
+            let validated = validate_spec(&server.server)?;
+            servers.insert(&server.id, Item::Table(to_grok_table(&validated)?));
         }
         if servers.is_empty() {
             document.as_table_mut().remove("mcp_servers");
@@ -382,6 +422,15 @@ fn to_codex_table(spec: &Value) -> Result<Table, AppError> {
             key
         };
         table.insert(key, json_to_toml_item(value)?);
+    }
+    Ok(table)
+}
+
+fn to_grok_table(spec: &Value) -> Result<Table, AppError> {
+    let mut table = to_codex_table(spec)?;
+    table.remove("type");
+    if let Some(headers) = table.remove("http_headers") {
+        table.insert("headers", headers);
     }
     Ok(table)
 }

@@ -5,7 +5,7 @@
 `cc-switchy` is a download-only Rust CLI and Ratatui application for restoring
 CC Switch cloud snapshots from WebDAV or S3-compatible storage. It can manage
 multiple sources, restore the latest selected snapshot, and apply providers,
-MCP servers, and Skills to supported local Agents.
+MCP servers, and Skills to supported local Agents, including Grok Build.
 
 > `cc-switchy --sync` always downloads and applies the current snapshot from
 > the selected source. It does not upload, merge, or delete remote data.
@@ -18,6 +18,7 @@ MCP servers, and Skills to supported local Agents.
 - 通过向导管理多个 WebDAV 与 S3 同步源：列表、新增、查看、编辑、删除、测试和设置默认源。
 - `cc-switchy --sync` 一键重新下载并恢复默认源的最新快照。
 - 安全恢复 CC Switch v2/db-v6 的 `manifest.json`、`db.sql` 和 `skills.zip`，兼容 WebDAV db-v5 旧路径回退。
+- 兼容 CC Switch v3.18 的 SQLite schema v16，并支持 Grok Build 的供应商、MCP 和 Skills 投影。
 - 将供应商、MCP 和 Skills 应用到本地 Agent，并在 TUI 中切换独占式 Agent 的供应商。
 - CLI、向导、TUI、进度与错误均支持简体中文和英文。
 - 全程显示阶段、下载字节、耗时、警告和备份位置。
@@ -82,11 +83,12 @@ cc-switchy --lang en
 
 ### TUI 按键
 
-- `1` 供应商，`2` Skills，`3` 活动，`4` 同步源
-- `↑/↓` 或 `j/k` 移动，`Tab/Shift+Tab` 切换焦点，`←/→` 或 `h/l` 切换面板
-- `[`/`]` 切换 Agent；此操作只浏览，不会切换供应商
+- 顶栏持续显示当前 Agent、供应商、默认同步源和操作状态。
+- `1` 切换，`2` 同步，`3` Skills，`4` 活动。
+- `↑/↓` 或 `j/k` 移动，`Tab/Shift+Tab` 切换焦点。
+- Agent 工作区获得焦点时，`←/→` 或 `h/l` 切换 Agent；`[`/`]` 可在任意主界面切换 Agent。此操作只浏览，不会切换供应商。
 - `Enter` 切换独占式 Agent 的供应商，或重新应用累加式 Agent 的受管供应商集合
-- `s` 同步默认源；在“同步源”页同步当前选中源
+- `s` 同步默认源；在“同步”页同步当前选中源
 - `t` 测试选中源，`m` 设置默认源，`w` 打开向导，`L` 切换语言
 - `Esc` 在本地恢复开始前请求取消，`q` 安全退出
 
@@ -174,6 +176,7 @@ ZIP 路径和 SQL。备份开启时，程序会先创建完整本地备份、执
 | Claude Desktop | 独占；仅 macOS/Windows，代理模式为警告 | 不支持 | 不支持 |
 | Codex | 独占 | 支持 | 支持 |
 | Gemini | 独占 | 支持 | 支持 |
+| Grok Build | 独占 | 支持 | 支持 |
 | OpenCode | 累加 | 支持 | 支持 |
 | OpenClaw | 累加 | 不支持 | 不支持 |
 | Hermes | 累加 | 支持 | 支持 |
@@ -199,6 +202,7 @@ ZIP 路径和 SQL。备份开启时，程序会先创建完整本地备份、执
 - Manages multiple WebDAV and S3 sources with CRUD, connection tests, and one default source.
 - Re-fetches and restores the current selected CC Switch snapshot with one `--sync` command.
 - Safely validates and restores CC Switch v2/db-v6 `manifest.json`, `db.sql`, and `skills.zip` artifacts.
+- Supports the CC Switch v3.18 SQLite schema v16 and projects Grok Build providers, MCP servers, and Skills.
 - Projects providers, MCP servers, and Skills to supported local Agents and switches exclusive providers from the TUI.
 - Renders CLI, Wizard, TUI, progress, and errors in English or Simplified Chinese.
 
@@ -231,11 +235,13 @@ backup settings, and `L` changes language. Backup settings provide an explicit
 creation switch and retention count; `0` means unlimited. `Esc` discards a form
 or goes back, `q` exits outside forms, and `Ctrl+C` exits from every Wizard screen.
 
-Main TUI keys: `1` Providers, `2` Skills, `3` Activity, `4` Sources,
-`j/k` or arrows to move, `Tab` to change focus, `[`/`]` to browse Agents,
-`Enter` to switch/reapply providers, `s` to sync, `t` to test a source, `m` to
-make it default, `w` to open the Wizard, `L` to change language, and `q` to
-quit safely.
+The TUI header always shows the selected Agent, its current provider, the
+default sync source, and operation state. Main keys are `1` Switch, `2` Sync,
+`3` Skills, and `4` Activity. Use `j/k` or arrows to move, `Tab` to change
+focus, left/right while the Agent workspace is focused, or `[`/`]` anywhere to
+browse Agents. `Enter` switches or reapplies providers, `s` syncs, `t` tests a
+source, `m` makes it default, `w` opens the Wizard, `L` changes language, and
+`q` quits safely.
 
 ### Storage and results
 
@@ -274,7 +280,8 @@ binary inherits the build runner's glibc baseline.
 
 `cc-switchy` is MIT licensed. CC Switch compatibility behavior was studied and
 adapted from [CC Switch](https://github.com/farion1231/cc-switch) at commits
-`c6197ae32450cd70e2bf03b35e3f5f53ac12044c` and
-`3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0` schema). See
+`c6197ae32450cd70e2bf03b35e3f5f53ac12044c`,
+`3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0`, SQLite schema v13),
+and `a377d79303bc1e592d2783d559ca5bd6b8ba1417` (`v3.18.0`, SQLite schema v16 and Grok Build). See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution and the
 upstream MIT notice.

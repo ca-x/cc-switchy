@@ -301,6 +301,8 @@ fn legacy_database_shape_is_migrated_before_validation() {
     assert!(columns.contains(&"meta".to_string()));
     assert!(columns.contains(&"sort_index".to_string()));
     assert!(table_columns(&connection, "skills").contains(&"enabled_hermes".to_string()));
+    assert!(table_columns(&connection, "skills").contains(&"enabled_grokbuild".to_string()));
+    assert!(table_columns(&connection, "mcp_servers").contains(&"enabled_grokbuild".to_string()));
     assert!(table_columns(&connection, "proxy_request_logs")
         .contains(&"input_token_semantics".to_string()));
     assert!(table_columns(&connection, "usage_daily_rollups")

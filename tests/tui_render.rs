@@ -50,6 +50,16 @@ fn app(language: Language, with_sources: bool) -> App {
         }],
     );
     providers.insert(
+        Agent::GrokBuild,
+        vec![ViewProvider {
+            id: "grok-a".to_string(),
+            name: "Grok A".to_string(),
+            category: Some("custom".to_string()),
+            is_current: true,
+            managed: true,
+        }],
+    );
+    providers.insert(
         Agent::OpenCode,
         vec![ViewProvider {
             id: "open-managed".to_string(),
@@ -584,11 +594,11 @@ fn wizard_secret_field_stays_masked_while_showing_the_cursor() {
 fn main_footer_only_advertises_actions_for_the_current_view() {
     let mut app = app(Language::EnUs, true);
     let providers = draw(&app, 100, 30);
-    assert!(providers.contains("Enter apply"));
+    assert!(providers.contains("Enter switch"));
 
     app.view = MainView::Skills;
     let skills = draw(&app, 100, 30);
-    assert!(!skills.contains("Enter apply"));
+    assert!(!skills.contains("Enter switch"));
     assert!(skills.contains("q quit"));
 
     app.view = MainView::Sources;
@@ -605,9 +615,54 @@ fn main_footer_only_advertises_actions_for_the_current_view() {
 }
 
 #[test]
+fn primary_navigation_and_status_header_center_switching_and_sync() {
+    let mut app = app(Language::EnUs, true);
+    let rendered = draw(&app, 140, 36);
+
+    assert!(rendered.contains("1 Switch"));
+    assert!(rendered.contains("2 Sync"));
+    assert!(rendered.contains("3 Skills"));
+    assert!(rendered.contains("4 Activity"));
+    assert!(rendered.contains("Agent  Claude"));
+    assert!(rendered.contains("Provider  Claude A"));
+    assert!(rendered.contains("Source  home-webdav"));
+    assert!(rendered.contains("Grok Build"));
+    assert!(rendered.contains("s sync"));
+
+    app.selected_agent = app
+        .agents
+        .iter()
+        .position(|agent| *agent == Agent::OpenCode)
+        .expect("OpenCode Agent");
+    let additive = draw(&app, 140, 36);
+    assert!(additive.contains("Provider  additive managed set"));
+    assert!(!additive.contains("Provider  OpenCode A"));
+}
+
+#[test]
+fn compact_header_and_agent_strip_keep_selected_context_visible() {
+    let mut app = app(Language::EnUs, true);
+    let compact = draw(&app, 60, 18);
+    assert!(compact.contains("Agent  Claude"));
+    assert!(compact.contains("Provider  Claude A"));
+    assert!(compact.contains("Source  home-webdav"));
+    assert!(compact.contains("Ready"));
+
+    app.selected_agent = app.agents.len() - 1;
+    let last_agent = app.selected_agent().to_string();
+    let compact = draw(&app, 70, 24);
+    assert!(compact.contains(&last_agent));
+    assert!(compact.contains("Source  home-webdav"));
+    assert!(compact.contains("Ready"));
+    assert!(compact.contains("q quit"));
+    assert!(compact.contains("[] Agent"));
+}
+
+#[test]
 fn source_operation_status_is_visible_in_details() {
     let mut app = app(Language::EnUs, true);
     app.view = MainView::Sources;
+    app.focus = FocusPane::Details;
     app.sources[0].status =
         Some("✓ Snapshot abcdef123456 · Sync finished with 0 warning(s).".to_string());
 
@@ -653,7 +708,7 @@ fn provider_layout_responds_without_hiding_navigation_context() {
 
     let narrow = draw(&app, 70, 24);
     assert!(narrow.contains("Agents"));
-    assert!(!narrow.contains("Claude A"));
+    assert!(narrow.contains("Claude A"));
 
     let tiny = draw(&app, 50, 15);
     assert!(tiny.contains("Terminal is too small"));
@@ -758,7 +813,7 @@ fn agent_navigation_and_provider_actions_are_independent() {
 #[test]
 fn sources_shortcuts_queue_session_sync_default_change_and_language() {
     let mut app = app(Language::EnUs, true);
-    app.update(keymap::action_for(&app, key(KeyCode::Char('4'))).expect("Sources"));
+    app.update(keymap::action_for(&app, key(KeyCode::Char('2'))).expect("Sync"));
     assert_eq!(app.view, MainView::Sources);
     drain(&mut app);
     app.update(cc_switchy::tui::TuiAction::Move(1));

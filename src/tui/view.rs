@@ -3,13 +3,17 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::event::ActivityStatus;
 use super::{App, FocusPane, MainView};
 use crate::{Language, MessageArgs, MessageKey, Translator};
 
 const ACCENT: Color = Color::Cyan;
+const SECONDARY: Color = Color::LightBlue;
 const MUTED: Color = Color::DarkGray;
+const SELECTED_BG: Color = Color::Rgb(27, 34, 41);
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.area();
@@ -20,110 +24,184 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(4),
             Constraint::Min(10),
             Constraint::Length(2),
         ])
         .split(area);
-    render_tabs(frame, app, rows[0]);
+    render_header(frame, app, rows[0]);
     match app.view {
         MainView::Providers => render_providers(frame, app, rows[1]),
+        MainView::Sources => render_sources(frame, app, rows[1]),
         MainView::Skills => render_skills(frame, app, rows[1]),
         MainView::Activity => render_activity(frame, app, rows[1]),
-        MainView::Sources => render_sources(frame, app, rows[1]),
     }
     render_footer(frame, app, rows[2]);
 }
 
-fn render_tabs(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
-    let tabs = [
-        (MainView::Providers, "1", MessageKey::TuiProviders),
-        (MainView::Skills, "2", MessageKey::TuiSkills),
-        (MainView::Activity, "3", MessageKey::TuiActivity),
-        (MainView::Sources, "4", MessageKey::TuiSources),
-    ];
-    let mut spans = vec![Span::styled(
-        " cc-switchy  ",
-        Style::default()
-            .fg(Color::Black)
-            .bg(ACCENT)
-            .add_modifier(Modifier::BOLD),
-    )];
-    for (view, key, label) in tabs {
-        let style = if app.view == view {
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+    let agent = app.selected_agent();
+    let agent_name = truncate_to_width(&agent.to_string(), 18);
+    let provider = if agent.is_additive() {
+        translator.text(MessageKey::TuiAdditiveSet, &args)
+    } else {
+        app.current_provider()
+            .map(|provider| provider.name.clone())
+            .unwrap_or_else(|| "—".to_string())
+    };
+    let source = app.default_source_name().unwrap_or("—");
+    let label_width = display_width(&translator.text(MessageKey::TuiAgent, &args))
+        + display_width(&translator.text(MessageKey::TuiProvider, &args));
+    let provider_width = usize::from(area.width)
+        .saturating_sub(20 + label_width + display_width(&agent_name))
+        .max(4);
+    let provider = truncate_to_width(&provider, provider_width);
+    let source_width = usize::from(area.width).saturating_sub(24).max(4);
+    let source = truncate_to_width(source, source_width);
+    let state = if app.progress.active {
+        (
+            "◌",
+            translator.text(MessageKey::TuiWorkingShort, &args),
+            Color::Yellow,
+        )
+    } else {
+        (
+            "✓",
+            translator.text(MessageKey::TuiReady, &args),
+            Color::Green,
+        )
+    };
+    let primary_status = Line::from(vec![
+        Span::styled(
+            " cc-switchy ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  {}  ", translator.text(MessageKey::TuiAgent, &args)),
+            Style::default().fg(MUTED),
+        ),
+        Span::styled(agent_name, Style::default().fg(ACCENT).bold()),
+        Span::styled(
+            format!("  {}  ", translator.text(MessageKey::TuiProvider, &args)),
+            Style::default().fg(MUTED),
+        ),
+        Span::styled(provider, Style::default().fg(Color::White)),
+    ]);
+    let secondary_status = Line::from(vec![
+        Span::styled(
+            format!(" {}  ", translator.text(MessageKey::TuiSource, &args)),
+            Style::default().fg(MUTED),
+        ),
+        Span::styled(source, Style::default().fg(SECONDARY)),
+        Span::raw("  "),
+        Span::styled(
+            format!("{} {}", state.0, state.1),
+            Style::default().fg(state.2),
+        ),
+    ]);
+    let navigation = [
+        (MainView::Providers, "1", MessageKey::TuiSwitch),
+        (MainView::Sources, "2", MessageKey::TuiSync),
+        (MainView::Skills, "3", MessageKey::TuiSkills),
+        (MainView::Activity, "4", MessageKey::TuiActivity),
+    ]
+    .into_iter()
+    .flat_map(|(view, key, label)| {
+        let selected = app.view == view;
+        let style = if selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(ACCENT)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(MUTED)
         };
-        spans.push(Span::styled(
-            format!("  {key} {}  ", translator.text(label, &args)),
-            style,
-        ));
-    }
+        [
+            Span::raw("  "),
+            Span::styled(format!("{key} {}", translator.text(label, &args)), style),
+        ]
+    })
+    .collect::<Vec<_>>();
     frame.render_widget(
-        Paragraph::new(Line::from(spans)).block(Block::default().borders(Borders::BOTTOM)),
+        Paragraph::new(vec![
+            primary_status,
+            secondary_status,
+            Line::from(navigation),
+        ])
+        .block(Block::default().borders(Borders::BOTTOM)),
         area,
     );
 }
 
 fn render_providers(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    if area.width >= 120 {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(7)])
+        .split(area);
+    render_agent_strip(frame, app, rows[0]);
+    if rows[1].width >= 120 {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(24),
-                Constraint::Percentage(42),
-                Constraint::Min(32),
-            ])
-            .split(area);
-        render_agents(frame, app, columns[0]);
-        render_provider_list(frame, app, columns[1]);
-        render_provider_details(frame, app, columns[2]);
-    } else if area.width >= 80 {
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(24), Constraint::Min(40)])
-            .split(area);
-        render_agents(frame, app, columns[0]);
-        if app.focus == FocusPane::Details {
-            render_provider_details(frame, app, columns[1]);
-        } else {
-            render_provider_list(frame, app, columns[1]);
-        }
+            .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
+            .split(rows[1]);
+        render_provider_list(frame, app, columns[0]);
+        render_provider_details(frame, app, columns[1]);
+    } else if app.focus == FocusPane::Details {
+        render_provider_details(frame, app, rows[1]);
     } else {
-        match app.focus {
-            FocusPane::Agents => render_agents(frame, app, area),
-            FocusPane::Details => render_provider_details(frame, app, area),
-            FocusPane::List | FocusPane::Activity => render_provider_list(frame, app, area),
-        }
+        render_provider_list(frame, app, rows[1]);
     }
 }
 
-fn render_agents(frame: &mut Frame<'_>, app: &App, area: Rect) {
+fn render_agent_strip(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
-    let items = app
+    let (start, end) = visible_agent_range(app, area.width);
+    let spans = app
         .agents
         .iter()
         .enumerate()
-        .map(|(index, agent)| {
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .flat_map(|(index, agent)| {
             let selected = index == app.selected_agent;
-            let supported = app
+            let available = app
                 .providers
                 .get(agent)
                 .is_some_and(|providers| !providers.is_empty());
-            ListItem::new(format!(
-                "{} {} {}",
-                if selected { "›" } else { " " },
-                if supported { "✓" } else { "×" },
-                agent
-            ))
-            .style(selection_style(selected))
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(ACCENT)
+                    .add_modifier(Modifier::BOLD)
+            } else if available {
+                Style::default().fg(Color::White)
+            } else {
+                Style::default().fg(MUTED)
+            };
+            [
+                Span::raw(" "),
+                Span::styled(
+                    format!("{} {agent} ", if available { "●" } else { "○" }),
+                    style,
+                ),
+            ]
         })
         .collect::<Vec<_>>();
+    let mut visible = Vec::new();
+    if start > 0 {
+        visible.push(Span::styled(" ‹", Style::default().fg(MUTED)));
+    }
+    visible.extend(spans);
+    if end < app.agents.len() {
+        visible.push(Span::styled(" ›", Style::default().fg(MUTED)));
+    }
     frame.render_widget(
-        List::new(items).block(pane_block(
+        Paragraph::new(Line::from(visible)).block(pane_block(
             &translator.text(MessageKey::TuiAgents, &MessageArgs::default()),
             app.focus == FocusPane::Agents,
         )),
@@ -133,6 +211,7 @@ fn render_agents(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
 fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
+    let args = MessageArgs::default();
     let agent = app.selected_agent();
     let cursor = app
         .provider_cursors
@@ -146,10 +225,10 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .unwrap_or_default();
     if providers.is_empty() {
         frame.render_widget(
-            Paragraph::new(translator.text(MessageKey::TuiNoProviders, &MessageArgs::default()))
+            Paragraph::new(translator.text(MessageKey::TuiNoProviders, &args))
                 .alignment(Alignment::Center)
                 .block(pane_block(
-                    &translator.text(MessageKey::TuiProviders, &MessageArgs::default()),
+                    &translator.text(MessageKey::TuiProviders, &args),
                     app.focus == FocusPane::List,
                 )),
             area,
@@ -162,24 +241,26 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .skip(cursor.scroll)
         .map(|(index, provider)| {
             let selected = index == cursor.selected;
-            let glyph = if agent.is_additive() {
-                "◉"
+            let state = if agent.is_additive() {
+                translator.text(MessageKey::TuiAdditiveSet, &args)
             } else if provider.is_current {
-                "●"
+                translator.text(MessageKey::TuiCurrent, &args)
             } else {
-                "○"
+                translator.text(MessageKey::TuiAvailable, &args)
             };
-            let managed = if provider.managed {
+            let unmanaged = if provider.managed {
                 String::new()
             } else {
-                format!(
-                    "  × {}",
-                    translator.text(MessageKey::TuiUnmanaged, &MessageArgs::default())
-                )
+                format!(" · {}", translator.text(MessageKey::TuiUnmanaged, &args))
             };
             ListItem::new(format!(
-                "{} {glyph} {}{managed}",
+                "{} {}  {}  · {state}{unmanaged}",
                 if selected { "›" } else { " " },
+                if agent.is_additive() || provider.is_current {
+                    "●"
+                } else {
+                    "○"
+                },
                 provider.name
             ))
             .style(selection_style(selected))
@@ -189,7 +270,7 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         List::new(items).block(pane_block(
             &format!(
                 "{} · {agent}",
-                translator.text(MessageKey::TuiProviders, &MessageArgs::default())
+                translator.text(MessageKey::TuiProviders, &args)
             ),
             app.focus == FocusPane::List,
         )),
@@ -200,31 +281,40 @@ fn render_provider_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_provider_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
-    let text = app.selected_provider().map_or_else(
-        || translator.text(MessageKey::TuiNoProviders, &args),
+    let lines = app.selected_provider().map_or_else(
+        || {
+            vec![Line::raw(
+                translator.text(MessageKey::TuiNoProviders, &args),
+            )]
+        },
         |provider| {
-            format!(
-                "{}\n\nID\n{}\n\n{}\n{}\n\n{}\n{}",
-                provider.name,
-                provider.id,
-                translator.text(MessageKey::TuiCategory, &args),
-                provider.category.as_deref().unwrap_or("—"),
-                translator.text(MessageKey::TuiStatus, &args),
-                if app.selected_agent().is_additive() {
-                    format!("◉ {}", translator.text(MessageKey::TuiAdditiveSet, &args))
-                } else if provider.is_current {
-                    format!("● {}", translator.text(MessageKey::TuiCurrent, &args))
-                } else {
-                    format!("○ {}", translator.text(MessageKey::TuiAvailable, &args))
-                }
-            )
+            let status = if app.selected_agent().is_additive() {
+                format!("● {}", translator.text(MessageKey::TuiAdditiveSet, &args))
+            } else if provider.is_current {
+                format!("● {}", translator.text(MessageKey::TuiCurrent, &args))
+            } else {
+                format!("○ {}", translator.text(MessageKey::TuiAvailable, &args))
+            };
+            vec![
+                Line::styled(
+                    provider.name.clone(),
+                    Style::default().fg(Color::White).bold(),
+                ),
+                Line::raw(""),
+                detail_line(translator.text(MessageKey::TuiStatus, &args), status),
+                detail_line("ID".to_string(), provider.id.clone()),
+                detail_line(
+                    translator.text(MessageKey::TuiCategory, &args),
+                    provider.category.clone().unwrap_or_else(|| "—".to_string()),
+                ),
+            ]
         },
     );
     frame.render_widget(
-        Paragraph::new(text)
+        Paragraph::new(lines)
             .wrap(Wrap { trim: true })
             .block(pane_block(
-                &translator.text(MessageKey::TuiDetails, &MessageArgs::default()),
+                &translator.text(MessageKey::TuiDetails, &args),
                 app.focus == FocusPane::Details,
             )),
         area,
@@ -232,18 +322,12 @@ fn render_provider_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_skills(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    if area.width >= 80 {
-        let columns = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Length(24), Constraint::Min(30)])
-            .split(area);
-        render_agents(frame, app, columns[0]);
-        render_skill_list(frame, app, columns[1]);
-    } else if app.focus == FocusPane::Agents {
-        render_agents(frame, app, area);
-    } else {
-        render_skill_list(frame, app, area);
-    }
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(7)])
+        .split(area);
+    render_agent_strip(frame, app, rows[0]);
+    render_skill_list(frame, app, rows[1]);
 }
 
 fn render_skill_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -256,7 +340,7 @@ fn render_skill_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .iter()
         .map(|skill| {
             ListItem::new(format!(
-                "{} {}  {}",
+                "{}  {}  · {}",
                 if skill.enabled { "✓" } else { "○" },
                 skill.name,
                 skill.directory
@@ -300,8 +384,11 @@ fn render_activity(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .saturating_mul(100)
             .checked_div(*total)
             .unwrap_or(100);
+        let filled = usize::try_from(percent.min(100) / 10).unwrap_or(10);
         progress.push(Line::from(format!(
-            "{artifact}  {downloaded}/{total} {}  {percent}%",
+            "{artifact}  [{}{}]  {downloaded}/{total} {}  {percent}%",
+            "■".repeat(filled),
+            "·".repeat(10usize.saturating_sub(filled)),
             translator.text(MessageKey::TuiBytes, &args)
         )));
     }
@@ -354,29 +441,73 @@ fn render_sources(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 .alignment(Alignment::Center)
                 .wrap(Wrap { trim: true })
                 .block(pane_block(
-                    &translator.text(MessageKey::TuiSources, &MessageArgs::default()),
+                    &translator.text(MessageKey::TuiSync, &MessageArgs::default()),
                     true,
                 )),
             area,
         );
         return;
     }
-    if area.width >= 80 {
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(7)])
+        .split(area);
+    render_sync_summary(frame, app, rows[0]);
+    if rows[1].width >= 120 {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
-            .split(area);
+            .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
+            .split(rows[1]);
         render_source_list(frame, app, columns[0], false);
         render_source_details(frame, app, columns[1]);
     } else if app.focus == FocusPane::Details {
-        render_source_details(frame, app, area);
+        render_source_details(frame, app, rows[1]);
     } else {
-        render_source_list(frame, app, area, true);
+        render_source_list(frame, app, rows[1], true);
     }
+}
+
+fn render_sync_summary(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let translator = Translator::new(app.language);
+    let args = MessageArgs::default();
+    let source = app.selected_source();
+    let status = source
+        .and_then(|source| source.status.clone())
+        .unwrap_or_else(|| translator.text(MessageKey::TuiNotTested, &args));
+    let line = Line::from(vec![
+        Span::styled(" s ", Style::default().fg(Color::Black).bg(ACCENT).bold()),
+        Span::styled(
+            format!(" {}  ", translator.text(MessageKey::TuiSyncNow, &args)),
+            Style::default().fg(ACCENT).bold(),
+        ),
+        Span::styled(
+            format!("{}  ", translator.text(MessageKey::TuiSource, &args)),
+            Style::default().fg(MUTED),
+        ),
+        Span::styled(
+            source
+                .map(|source| source.config.name.as_str())
+                .unwrap_or("—"),
+            Style::default().fg(Color::White),
+        ),
+        Span::styled(
+            format!("  {}  ", translator.text(MessageKey::TuiStatus, &args)),
+            Style::default().fg(MUTED),
+        ),
+        Span::styled(status, Style::default().fg(SECONDARY)),
+    ]);
+    frame.render_widget(
+        Paragraph::new(line).block(pane_block(
+            &translator.text(MessageKey::TuiSync, &args),
+            false,
+        )),
+        area,
+    );
 }
 
 fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect, show_status: bool) {
     let translator = Translator::new(app.language);
+    let args = MessageArgs::default();
     let items = app
         .sources
         .iter()
@@ -389,15 +520,16 @@ fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect, show_status:
                 source.config.name,
                 source.kind_label(),
                 if source.is_default {
-                    translator.text(MessageKey::TuiDefault, &MessageArgs::default())
+                    translator.text(MessageKey::TuiDefault, &args)
                 } else {
                     String::new()
                 }
             );
             let item = if show_status {
-                let status = source.status.clone().unwrap_or_else(|| {
-                    translator.text(MessageKey::TuiNotTested, &MessageArgs::default())
-                });
+                let status = source
+                    .status
+                    .clone()
+                    .unwrap_or_else(|| translator.text(MessageKey::TuiNotTested, &args));
                 ListItem::new(vec![Line::raw(header), Line::raw(format!("  {status}"))])
             } else {
                 ListItem::new(header)
@@ -407,7 +539,7 @@ fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect, show_status:
         .collect::<Vec<_>>();
     frame.render_widget(
         List::new(items).block(pane_block(
-            &translator.text(MessageKey::TuiSources, &MessageArgs::default()),
+            &translator.text(MessageKey::TuiSources, &args),
             app.focus == FocusPane::List,
         )),
         area,
@@ -417,27 +549,40 @@ fn render_source_list(frame: &mut Frame<'_>, app: &App, area: Rect, show_status:
 fn render_source_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
-    let text = app.selected_source().map_or_else(String::new, |source| {
-        let gap = if area.height < 20 { "\n" } else { "\n\n" };
-        format!(
-            "{}{gap}{}\n{}{gap}{}\n{}{gap}{}\n{}/v2/db-v6/{}{gap}{}\n{}",
-            source.config.name,
-            translator.text(MessageKey::TuiType, &args),
-            source.kind_label(),
-            translator.text(MessageKey::TuiEndpoint, &args),
-            source.safe_endpoint(),
-            translator.text(MessageKey::TuiRemotePath, &args),
-            source.config.remote_root,
-            source.config.profile,
-            translator.text(MessageKey::TuiStatus, &args),
-            source
-                .status
-                .clone()
-                .unwrap_or_else(|| translator.text(MessageKey::TuiNotTested, &args))
-        )
+    let lines = app.selected_source().map_or_else(Vec::new, |source| {
+        vec![
+            Line::styled(
+                source.config.name.clone(),
+                Style::default().fg(Color::White).bold(),
+            ),
+            Line::raw(""),
+            detail_line(
+                translator.text(MessageKey::TuiType, &args),
+                source.kind_label().to_string(),
+            ),
+            detail_line(
+                translator.text(MessageKey::TuiEndpoint, &args),
+                source.safe_endpoint(),
+            ),
+            detail_line(
+                translator.text(MessageKey::TuiRemotePath, &args),
+                format!(
+                    "{}/v2/db-v6/{}",
+                    source.config.remote_root, source.config.profile
+                ),
+            ),
+            Line::raw(""),
+            detail_line(
+                translator.text(MessageKey::TuiStatus, &args),
+                source
+                    .status
+                    .clone()
+                    .unwrap_or_else(|| translator.text(MessageKey::TuiNotTested, &args)),
+            ),
+        ]
     });
     frame.render_widget(
-        Paragraph::new(text)
+        Paragraph::new(lines)
             .wrap(Wrap { trim: true })
             .block(pane_block(
                 &translator.text(MessageKey::TuiDetails, &args),
@@ -450,11 +595,16 @@ fn render_source_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let translator = Translator::new(app.language);
     let args = MessageArgs::default();
-    let footer_key = match app.view {
-        MainView::Providers => MessageKey::TuiFooterProviders,
-        MainView::Skills => MessageKey::TuiFooterSkills,
-        MainView::Activity => MessageKey::TuiFooterActivity,
-        MainView::Sources => MessageKey::TuiFooterSources,
+    let compact = area.width < 100;
+    let footer_key = match (app.view, compact) {
+        (MainView::Providers, false) => MessageKey::TuiFooterProviders,
+        (MainView::Providers, true) => MessageKey::TuiFooterProvidersCompact,
+        (MainView::Sources, false) => MessageKey::TuiFooterSources,
+        (MainView::Sources, true) => MessageKey::TuiFooterSourcesCompact,
+        (MainView::Skills, false) => MessageKey::TuiFooterSkills,
+        (MainView::Skills, true) => MessageKey::TuiFooterSkillsCompact,
+        (MainView::Activity, false) => MessageKey::TuiFooterActivity,
+        (MainView::Activity, true) => MessageKey::TuiFooterActivityCompact,
     };
     let retry = if app.view == MainView::Activity && app.progress.retry_available {
         format!("  r {}", translator.text(MessageKey::TuiRetry, &args))
@@ -474,6 +624,13 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .style(Style::default().fg(MUTED)),
         area,
     );
+}
+
+fn detail_line(label: String, value: String) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(format!("{label:<12}"), Style::default().fg(MUTED)),
+        Span::raw(value),
+    ])
 }
 
 fn render_resize(frame: &mut Frame<'_>, language: Language, area: Rect) {
@@ -501,8 +658,76 @@ fn pane_block(title: &str, focused: bool) -> Block<'_> {
 
 fn selection_style(selected: bool) -> Style {
     if selected {
-        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(ACCENT)
+            .bg(SELECTED_BG)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
     }
+}
+
+fn visible_agent_range(app: &App, area_width: u16) -> (usize, usize) {
+    let len = app.agents.len();
+    if len == 0 {
+        return (0, 0);
+    }
+    let selected = app.selected_agent.min(len - 1);
+    let capacity = usize::from(area_width.saturating_sub(4));
+    let widths = app
+        .agents
+        .iter()
+        .map(|agent| display_width(&agent.to_string()) + 4)
+        .collect::<Vec<_>>();
+    let mut start = selected;
+    let mut end = selected + 1;
+    let mut used = widths[selected];
+
+    while start > 0 {
+        let candidate = start - 1;
+        let hidden_left = usize::from(candidate > 0) * 2;
+        let hidden_right = usize::from(end < len) * 2;
+        if used + widths[candidate] + hidden_left + hidden_right > capacity {
+            break;
+        }
+        start = candidate;
+        used += widths[candidate];
+    }
+    while end < len {
+        let hidden_left = usize::from(start > 0) * 2;
+        let hidden_right = usize::from(end + 1 < len) * 2;
+        if used + widths[end] + hidden_left + hidden_right > capacity {
+            break;
+        }
+        used += widths[end];
+        end += 1;
+    }
+    (start, end)
+}
+
+fn truncate_to_width(value: &str, max_width: usize) -> String {
+    if display_width(value) <= max_width {
+        return value.to_string();
+    }
+    if max_width <= 1 {
+        return "…".to_string();
+    }
+    let ellipsis_width = display_width("…");
+    let target = max_width.saturating_sub(ellipsis_width);
+    let mut result = String::new();
+    let mut width = 0;
+    for grapheme in value.graphemes(true) {
+        let grapheme_width = display_width(grapheme);
+        if width + grapheme_width > target {
+            break;
+        }
+        result.push_str(grapheme);
+        width += grapheme_width;
+    }
+    result.push('…');
+    result
+}
+
+fn display_width(value: &str) -> usize {
+    UnicodeWidthStr::width(value)
 }

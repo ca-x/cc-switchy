@@ -6,13 +6,13 @@
   "createdAt": "2026-07-13T10:42:00Z",
   "artifacts": {
     "db.sql": {
-      "sha256": "fc96f37bcfdb68090621afd38b2c6ed092f1f3de6b9beb69c37abf8c6d61767d",
-      "size": 3359
+      "sha256": "afe943269c7740f8784a674a6869ae32230085759c8c90fa7faf843bde159d86",
+      "size": 3812
     },
     "skills.zip": {
       "sha256": "f356667d67f458c786ccd16d582c5d4ca7ecc0b0bbd10268b56f6720cb45c0de",
       "size": 280
     }
   },
-  "snapshotId": "c214cb5fadf676a385496e23b1fd170f24b61f98e66380cfde964c5b45bfe79b"
+  "snapshotId": "c1d2b3121e385b87a8613351ed616c6e42b8ba11d8a528f12f0c747e75379e7a"
 }

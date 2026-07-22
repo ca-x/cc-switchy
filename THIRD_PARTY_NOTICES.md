@@ -8,15 +8,16 @@ behavior by studying and adapting portions of CC Switch.
 - Project: CC Switch
 - Source: https://github.com/farion1231/cc-switch
 - Protocol/projection reference: `c6197ae32450cd70e2bf03b35e3f5f53ac12044c`
-- Database schema reference: `3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0`)
+- Database schema v13 reference: `3d176b98cc0bfd151a42882e88ab59b62083b92f` (`v3.17.0`)
+- Database schema v16 and Grok Build reference: `a377d79303bc1e592d2783d559ca5bd6b8ba1417` (`v3.18.0`)
 - License: MIT
 
 Adapted areas include:
 
 - the `cc-switch-webdav-sync` v2 protocol and WebDAV/S3 object layout;
 - CC Switch SQLite export validation, db-v5 migration, and db-v6 restore behavior;
-- provider projection for Claude, Codex, Gemini, OpenCode, OpenClaw, Hermes,
-  and the supported Claude Desktop boundary;
+- provider projection for Claude, Codex, Gemini, Grok Build, OpenCode,
+  OpenClaw, Hermes, and the supported Claude Desktop boundary;
 - MCP projection and preservation of unknown local entries;
 - Skills SSOT, symlink/copy, enablement, and managed-target reconciliation.
 

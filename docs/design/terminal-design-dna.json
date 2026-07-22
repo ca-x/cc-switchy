@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "name": "Agent Switchboard Terminal",
+    "description": "A compact, status-first terminal interface for switching Agent providers and synchronizing CC Switch state.",
+    "source_references": [
+      "Existing cc-switchy Ratatui interface",
+      "User brief: Agent configuration switching and synchronization are the primary jobs"
+    ],
+    "created_at": "2026-07-23"
+  },
+  "design_system": {
+    "color": {
+      "palette_type": "complementary",
+      "primary": {
+        "hex": "#5FD7D7",
+        "role": "focus, selected workspace, and primary action"
+      },
+      "secondary": {
+        "hex": "#87AFC7",
+        "role": "metadata and secondary navigation"
+      },
+      "accent": {
+        "hex": "#FFD75F",
+        "role": "sync activity, warnings, and attention"
+      },
+      "neutral": {
+        "scale": ["#101418", "#1B2229", "#3A4650", "#87939D", "#D7DEE3", "#F4F7F9"],
+        "usage": "Terminal background, subdued borders, secondary text, and primary text"
+      },
+      "semantic": {
+        "success": "#5FD787",
+        "warning": "#FFD75F",
+        "error": "#FF5F5F",
+        "info": "#5FAFFF"
+      },
+      "surface": {
+        "background": "#101418",
+        "card": "#1B2229",
+        "elevated": "#27313A"
+      },
+      "contrast_strategy": "High-contrast foreground with muted structural chrome; color is reserved for state and focus"
+    },
+    "typography": {
+      "type_scale": {
+        "display": {"size": "1 terminal cell", "weight": "bold", "line_height": "1", "tracking": "0"},
+        "heading_1": {"size": "1 terminal cell", "weight": "bold", "line_height": "1", "tracking": "0"},
+        "heading_2": {"size": "1 terminal cell", "weight": "bold", "line_height": "1", "tracking": "0"},
+        "heading_3": {"size": "1 terminal cell", "weight": "medium", "line_height": "1", "tracking": "0"},
+        "body": {"size": "1 terminal cell", "weight": "regular", "line_height": "1", "tracking": "0"},
+        "body_small": {"size": "1 terminal cell", "weight": "regular", "line_height": "1", "tracking": "0"},
+        "caption": {"size": "1 terminal cell", "weight": "regular", "line_height": "1", "tracking": "0"},
+        "overline": {"size": "1 terminal cell", "weight": "bold", "line_height": "1", "tracking": "1 cell between groups"}
+      },
+      "font_families": {
+        "heading": "terminal monospace",
+        "body": "terminal monospace",
+        "mono": "terminal monospace"
+      },
+      "font_style_notes": "Use weight and color, never simulated font-size, to express hierarchy in a terminal"
+    },
+    "spacing": {
+      "base_unit": "1 cell",
+      "scale": ["0", "1", "2", "3", "4"],
+      "content_density": "compact",
+      "section_rhythm": "One-cell internal padding; blank lines only inside detail panes where they improve scanning"
+    },
+    "layout": {
+      "grid_system": "Responsive Ratatui constraints with a persistent status header and contextual footer",
+      "max_content_width": "terminal width",
+      "columns": "Wide: provider list plus details; medium: one primary pane plus status rail; narrow: one focused pane",
+      "gutter": "0-1 terminal cell",
+      "breakpoints": ["60 columns minimum", "80 columns medium", "120 columns wide"],
+      "alignment_tendency": "strict grid"
+    },
+    "shape": {
+      "border_radius": {"small": "0", "medium": "0", "large": "0", "pill": "0"},
+      "border_usage": "Subtle single-line borders on major work areas; selected rows use a filled marker rather than extra boxes",
+      "divider_style": "Single terminal rule with muted color"
+    },
+    "elevation": {
+      "shadow_style": "none",
+      "levels": {"low": "color contrast only", "medium": "focused border plus color", "high": "modal overlay only"},
+      "depth_cues": "Color intensity, border emphasis, and spatial grouping"
+    },
+    "iconography": {
+      "style": "single-cell Unicode status glyphs with ASCII-safe text labels",
+      "stroke_weight": "single-cell",
+      "size_scale": ["1 cell"],
+      "preferred_set": "● ○ ✓ ! × ◌ ›"
+    },
+    "motion": {
+      "easing": "state-driven",
+      "duration_scale": {"micro": "100ms redraw tick", "normal": "operation event", "macro": "operation completion"},
+      "entrance_pattern": "Immediate redraw with focus relocation",
+      "exit_pattern": "Immediate redraw; active operations require cancellation",
+      "philosophy": "minimal functional"
+    },
+    "components": {
+      "button_style": "Key hints formatted as highlighted key plus plain-language action",
+      "input_style": "Existing wizard fields retained with focused border and explicit validation",
+      "card_style": "Bordered terminal panes with short uppercase-like titles and state badges",
+      "navigation_pattern": "Four numbered jobs: Switch, Sync, Skills, Activity; Agents are a horizontal workspace selector",
+      "modal_style": "Full-context wizard overlay with preserved terminal state",
+      "list_style": "One-line rows, leading selection marker, trailing state badge, stable column alignment",
+      "component_notes": "Keep the current provider and default sync source visible in the header; put destructive or long-running state in the status line"
+    }
+  },
+  "design_style": {
+    "aesthetic": {
+      "mood": ["focused", "operational", "calm", "trustworthy"],
+      "visual_metaphor": "A compact switchboard for routing Agent configurations",
+      "era_influence": "Modern terminal operations tooling",
+      "genre": "developer productivity TUI",
+      "personality_traits": ["direct", "precise", "reassuring", "efficient"],
+      "adjectives": ["status-first", "keyboard-native", "compact", "legible"]
+    },
+    "visual_language": {
+      "complexity": "moderate",
+      "ornamentation": "none",
+      "whitespace_usage": "tight but grouped",
+      "visual_weight_distribution": "Current Agent/provider and sync readiness carry the most weight",
+      "focal_strategy": "One primary job per screen with persistent global status",
+      "contrast_level": "high",
+      "texture_usage": "none"
+    },
+    "composition": {
+      "hierarchy_method": "color weight plus spatial isolation",
+      "balance_type": "asymmetric",
+      "flow_direction": "top status to workspace selector to actionable list to contextual help",
+      "grouping_strategy": "Group by user job, then Agent, then provider/source",
+      "negative_space_role": "Separates state summaries from actionable rows"
+    },
+    "imagery": {
+      "photo_treatment": "none",
+      "illustration_style": "none",
+      "graphic_elements": "status glyphs, rules, and progress bars",
+      "pattern_usage": "none",
+      "image_shape": "not applicable"
+    },
+    "interaction_feel": {
+      "feedback_style": "Immediate focus/state change with activity-log confirmation for operations",
+      "hover_behavior": "not applicable; keyboard focus is explicit",
+      "transition_personality": "snappy",
+      "loading_style": "Live stage, elapsed time, artifact progress, and cancellable working badge",
+      "microinteraction_density": "low"
+    },
+    "brand_voice_in_ui": {
+      "tone": "concise and operational",
+      "formality": "neutral professional",
+      "cta_style": "direct imperative",
+      "empty_state_approach": "Explain the missing prerequisite and name the next key to press",
+      "error_tone": "Specific, recoverable, and free of blame"
+    }
+  },
+  "visual_effects": {
+    "overview": {
+      "effect_intensity": "none",
+      "performance_tier": "lightweight",
+      "fallback_strategy": "Use ASCII-compatible labels when Unicode glyph width is unreliable",
+      "primary_technology": "Ratatui terminal rendering"
+    },
+    "background_effects": {
+      "type": "none",
+      "description": "No decorative background effect",
+      "technology": "none",
+      "params": {"color_palette": [], "speed": "0", "density": "0", "opacity": "0", "blend_mode": "none"}
+    },
+    "particle_systems": {
+      "enabled": false,
+      "type": "none",
+      "description": "Disabled",
+      "technology": "none",
+      "params": {"count": 0, "shape": "none", "size_range": "0", "movement_pattern": "none", "color_behavior": "none", "interaction": "none", "spawn_area": "none"}
+    },
+    "3d_elements": {
+      "enabled": false,
+      "type": "none",
+      "description": "Disabled",
+      "technology": "none",
+      "params": {"renderer": "none", "lighting": "none", "camera": "none", "materials": [], "geometry": [], "post_processing": [], "interaction_model": "none"}
+    },
+    "shader_effects": {
+      "enabled": false,
+      "type": "none",
+      "description": "Disabled",
+      "technology": "none",
+      "params": {"uniforms": {}, "vertex_manipulation": "none", "fragment_output": "none", "noise_type": "none", "distortion": "none"}
+    },
+    "scroll_effects": {
+      "parallax": {"enabled": false, "layers": "0", "depth_range": "0", "speed_curve": "none"},
+      "scroll_triggered_animations": {"enabled": false, "trigger_points": [], "animation_type": "none", "scrub_behavior": "none"},
+      "scroll_morphing": {"enabled": false, "description": "Disabled"}
+    },
+    "text_effects": {
+      "type": "none",
+      "description": "Only state-driven color and weight changes",
+      "technology": "Ratatui styles",
+      "params": {"split_strategy": "none", "animation_per_unit": "none", "stagger": "0", "effect_style": "none"}
+    },
+    "cursor_effects": {
+      "enabled": false,
+      "type": "none",
+      "description": "Terminal cursor is hidden while the TUI is active",
+      "params": {"shape": "none", "size": "0", "blend_mode": "none", "trail": "none", "interaction_zone": "none"}
+    },
+    "image_effects": {
+      "type": "none",
+      "description": "No images",
+      "technology": "none",
+      "params": {"filter_pipeline": [], "hover_transform": "none", "reveal_animation": "none", "distortion_type": "none"}
+    },
+    "glassmorphism_neumorphism": {
+      "enabled": false,
+      "style": "none",
+      "params": {"blur_radius": "0", "transparency": "0", "border_treatment": "none", "shadow_type": "none", "light_source_angle": "none"}
+    },
+    "canvas_drawings": {
+      "enabled": false,
+      "type": "none",
+      "description": "Disabled",
+      "technology": "none",
+      "params": {"draw_method": "none", "animation_loop": "none", "color_scheme": [], "responsiveness": "none", "interaction": "none"}
+    },
+    "svg_animations": {
+      "enabled": false,
+      "type": "none",
+      "description": "Disabled",
+      "params": {"animation_method": "none", "path_morphing": "none", "stroke_animation": "none", "filter_effects": []}
+    },
+    "composite_notes": "Terminal effects are intentionally limited to focus color, semantic status glyphs, progress redraws, and operation state. There are no decorative loops or time-based animations."
+  }
+}

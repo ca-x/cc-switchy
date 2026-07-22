@@ -1,4 +1,7 @@
 //! Minimal CC Switch schema repair needed for db-v5/db-v6 restore compatibility.
+//!
+//! The sync protocol remains db-v6 while the embedded SQLite schema advances.
+//! CC Switch v3.18 schema v15 adds Grok Build enablement columns.
 
 use rusqlite::Connection;
 
@@ -44,6 +47,7 @@ fn create_core_tables(connection: &Connection) -> Result<(), AppError> {
                 enabled_claude BOOLEAN NOT NULL DEFAULT 0,
                 enabled_codex BOOLEAN NOT NULL DEFAULT 0,
                 enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+                enabled_grokbuild BOOLEAN NOT NULL DEFAULT 0,
                 enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
                 enabled_hermes BOOLEAN NOT NULL DEFAULT 0
             );
@@ -63,6 +67,7 @@ fn create_core_tables(connection: &Connection) -> Result<(), AppError> {
                 enabled_claude BOOLEAN NOT NULL DEFAULT 0,
                 enabled_codex BOOLEAN NOT NULL DEFAULT 0,
                 enabled_gemini BOOLEAN NOT NULL DEFAULT 0,
+                enabled_grokbuild BOOLEAN NOT NULL DEFAULT 0,
                 enabled_opencode BOOLEAN NOT NULL DEFAULT 0,
                 enabled_hermes BOOLEAN NOT NULL DEFAULT 0,
                 installed_at INTEGER NOT NULL DEFAULT 0,
@@ -128,6 +133,11 @@ fn migrate_legacy_columns(connection: &Connection) -> Result<(), AppError> {
         ),
         (
             "mcp_servers",
+            "enabled_grokbuild",
+            "BOOLEAN NOT NULL DEFAULT 0",
+        ),
+        (
+            "mcp_servers",
             "enabled_opencode",
             "BOOLEAN NOT NULL DEFAULT 0",
         ),
@@ -144,6 +154,7 @@ fn migrate_legacy_columns(connection: &Connection) -> Result<(), AppError> {
         ("skills", "enabled_claude", "BOOLEAN NOT NULL DEFAULT 0"),
         ("skills", "enabled_codex", "BOOLEAN NOT NULL DEFAULT 0"),
         ("skills", "enabled_gemini", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("skills", "enabled_grokbuild", "BOOLEAN NOT NULL DEFAULT 0"),
         ("skills", "enabled_opencode", "BOOLEAN NOT NULL DEFAULT 0"),
         ("skills", "enabled_hermes", "BOOLEAN NOT NULL DEFAULT 0"),
         ("skills", "installed_at", "INTEGER NOT NULL DEFAULT 0"),
@@ -189,10 +200,19 @@ fn validate_required_shape(connection: &Connection) -> Result<(), AppError> {
         ),
         (
             "mcp_servers",
-            &["id", "name", "server_config", "enabled_claude"][..],
+            &[
+                "id",
+                "name",
+                "server_config",
+                "enabled_claude",
+                "enabled_grokbuild",
+            ][..],
         ),
         ("settings", &["key", "value"][..]),
-        ("skills", &["id", "name", "directory"][..]),
+        (
+            "skills",
+            &["id", "name", "directory", "enabled_grokbuild"][..],
+        ),
     ] {
         if !table_exists(connection, table)? {
             return Err(AppError::DatabaseValidation(format!(

@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{App, MainView, TuiAction};
+use super::{App, FocusPane, MainView, TuiAction};
 use crate::Language;
 
 pub fn action_for(app: &App, key: KeyEvent) -> Option<TuiAction> {
@@ -15,13 +15,25 @@ pub fn action_for(app: &App, key: KeyEvent) -> Option<TuiAction> {
         KeyCode::Char('q') => Some(TuiAction::Quit),
         KeyCode::Esc if app.progress.active => Some(TuiAction::CancelActive),
         KeyCode::Char('1') => Some(TuiAction::SwitchView(MainView::Providers)),
-        KeyCode::Char('2') => Some(TuiAction::SwitchView(MainView::Skills)),
-        KeyCode::Char('3') => Some(TuiAction::SwitchView(MainView::Activity)),
-        KeyCode::Char('4') => Some(TuiAction::SwitchView(MainView::Sources)),
+        KeyCode::Char('2') => Some(TuiAction::SwitchView(MainView::Sources)),
+        KeyCode::Char('3') => Some(TuiAction::SwitchView(MainView::Skills)),
+        KeyCode::Char('4') => Some(TuiAction::SwitchView(MainView::Activity)),
         KeyCode::Down | KeyCode::Char('j') => Some(TuiAction::Move(1)),
         KeyCode::Up | KeyCode::Char('k') => Some(TuiAction::Move(-1)),
         KeyCode::Tab => Some(TuiAction::FocusNext),
         KeyCode::BackTab => Some(TuiAction::FocusPrevious),
+        KeyCode::Left | KeyCode::Char('h')
+            if app.focus == FocusPane::Agents
+                && matches!(app.view, MainView::Providers | MainView::Skills) =>
+        {
+            Some(TuiAction::PreviousAgent)
+        }
+        KeyCode::Right | KeyCode::Char('l')
+            if app.focus == FocusPane::Agents
+                && matches!(app.view, MainView::Providers | MainView::Skills) =>
+        {
+            Some(TuiAction::NextAgent)
+        }
         KeyCode::Left | KeyCode::Char('h') => Some(TuiAction::FocusPrevious),
         KeyCode::Right | KeyCode::Char('l') => Some(TuiAction::FocusNext),
         KeyCode::Char('[') => Some(TuiAction::PreviousAgent),

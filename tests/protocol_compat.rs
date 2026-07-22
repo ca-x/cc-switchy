@@ -70,29 +70,37 @@ fn committed_fixture_covers_exclusive_additive_mcp_and_skill_states() {
         .expect("provider rows")
         .collect::<Result<Vec<_>, _>>()
         .expect("provider values");
-    assert_eq!(provider_apps, ["codex", "opencode"]);
+    assert_eq!(provider_apps, ["codex", "grokbuild", "opencode"]);
 
-    let enabled_mcp: (i64, i64) = connection
+    let enabled_mcp: (i64, i64, i64) = connection
         .query_row(
-            "SELECT enabled_codex, enabled_opencode FROM mcp_servers WHERE id = 'fixture-mcp'",
+            "SELECT enabled_codex, enabled_grokbuild, enabled_opencode
+             FROM mcp_servers WHERE id = 'fixture-mcp'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .expect("fixture MCP");
-    assert_eq!(enabled_mcp, (1, 1));
+    assert_eq!(enabled_mcp, (1, 1, 1));
 
     let skill_states = connection
-        .prepare("SELECT id, enabled_codex FROM skills ORDER BY id")
+        .prepare("SELECT id, enabled_codex, enabled_grokbuild FROM skills ORDER BY id")
         .expect("Skills query")
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })
         .expect("Skill rows")
         .collect::<Result<Vec<_>, _>>()
         .expect("Skill values");
     assert_eq!(
         skill_states,
-        [("demo".to_string(), 1), ("disabled-demo".to_string(), 0)]
+        [
+            ("demo".to_string(), 1, 1),
+            ("disabled-demo".to_string(), 0, 0),
+        ]
     );
 }
 

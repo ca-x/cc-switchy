@@ -8,8 +8,10 @@ mod claude;
 mod claude_desktop;
 mod codex;
 mod gemini;
+mod grok;
 mod hermes;
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -17,7 +19,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tempfile::NamedTempFile;
-use toml_edit::{DocumentMut, Item, TableLike};
+use toml_edit::{DocumentMut, Item, Table, TableLike};
 
 use super::{
     effective_current_provider, Agent, AgentPaths, AgentRepository, DeviceSettings,
@@ -110,8 +112,22 @@ impl<'a> ProviderProjector<'a> {
         let files_before = MultiFileBackup::capture(&managed_paths)?;
 
         let result = (|| {
+            let unknown_grok_mcp = if agent == Agent::GrokBuild {
+                let known_ids = self
+                    .repo
+                    .mcp_servers()?
+                    .into_iter()
+                    .map(|server| server.id)
+                    .collect::<HashSet<_>>();
+                grok::capture_unknown_mcp_servers(self.paths, &known_ids)?
+            } else {
+                Table::new()
+            };
             if old_provider.as_ref().is_some_and(|old| old.id != target.id) {
-                if let Some(live) = read_live_settings(self.paths, agent)? {
+                if let Some(mut live) = read_live_settings(self.paths, agent)? {
+                    if agent == Agent::GrokBuild {
+                        grok::strip_mcp_servers(&mut live)?;
+                    }
                     let old_id = &old_provider.as_ref().expect("checked above").id;
                     self.repo.update_provider_settings(agent, old_id, &live)?;
                 }
@@ -122,6 +138,9 @@ impl<'a> ProviderProjector<'a> {
                 .set_current_provider(agent, Some(target.id.as_str()));
             self.settings.save_atomic(&settings_path)?;
             self.write_exclusive_provider(agent, &target)?;
+            if agent == Agent::GrokBuild {
+                grok::restore_unknown_mcp_servers(self.paths, &unknown_grok_mcp)?;
+            }
             Ok(())
         })();
 
@@ -218,6 +237,7 @@ impl<'a> ProviderProjector<'a> {
             Agent::Claude => claude::write(self.paths, &effective),
             Agent::Codex => codex::write(self.paths, &effective),
             Agent::Gemini => gemini::write(self.paths, &effective),
+            Agent::GrokBuild => grok::write(self.paths, provider, &effective),
             Agent::ClaudeDesktop => claude_desktop::write(self.paths, provider).map(|_| ()),
             Agent::OpenCode | Agent::OpenClaw | Agent::Hermes => {
                 Err(AppError::UnsupportedAgentFeature {
@@ -264,9 +284,11 @@ impl<'a> ProviderProjector<'a> {
                 json_deep_merge(env, &common);
                 Ok(settings)
             }
-            Agent::ClaudeDesktop | Agent::OpenCode | Agent::OpenClaw | Agent::Hermes => {
-                Ok(provider.settings_config.clone())
-            }
+            Agent::ClaudeDesktop
+            | Agent::GrokBuild
+            | Agent::OpenCode
+            | Agent::OpenClaw
+            | Agent::Hermes => Ok(provider.settings_config.clone()),
         }
     }
 
@@ -355,6 +377,7 @@ fn managed_paths(paths: &AgentPaths, agent: Agent) -> Result<Vec<PathBuf>, AppEr
         Agent::Claude => claude::managed_paths(paths),
         Agent::Codex => codex::managed_paths(paths),
         Agent::Gemini => gemini::managed_paths(paths),
+        Agent::GrokBuild => grok::managed_paths(paths),
         Agent::ClaudeDesktop => claude_desktop::managed_paths(paths),
         Agent::OpenCode | Agent::OpenClaw | Agent::Hermes => {
             Err(AppError::UnsupportedAgentFeature {
@@ -370,6 +393,7 @@ fn read_live_settings(paths: &AgentPaths, agent: Agent) -> Result<Option<Value>,
         Agent::Claude => claude::read(paths),
         Agent::Codex => codex::read(paths),
         Agent::Gemini => gemini::read(paths),
+        Agent::GrokBuild => grok::read(paths),
         Agent::ClaudeDesktop => Ok(None),
         Agent::OpenCode | Agent::OpenClaw | Agent::Hermes => Ok(None),
     }

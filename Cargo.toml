@@ -1,6 +1,6 @@
 [package]
 name = "cc-switchy"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.95"
 
@@ -34,6 +34,8 @@ tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread
 tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.9"
 toml_edit = "0.23"
+unicode-segmentation = "1"
+unicode-width = "0.2"
 url = "2.5"
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 

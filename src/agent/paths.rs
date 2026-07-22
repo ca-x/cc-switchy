@@ -38,6 +38,7 @@ impl AgentPaths {
             Agent::Claude => Ok(self.home.join(".claude")),
             Agent::Codex => Ok(self.home.join(".codex")),
             Agent::Gemini => Ok(self.home.join(".gemini")),
+            Agent::GrokBuild => Ok(self.home.join(".grok")),
             Agent::OpenCode => Ok(self.home.join(".config/opencode")),
             Agent::OpenClaw => Ok(self.home.join(".openclaw")),
             Agent::Hermes => Ok(default_hermes_dir(&self.home)),

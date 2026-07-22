@@ -15,17 +15,20 @@ pub enum Agent {
     ClaudeDesktop,
     Codex,
     Gemini,
+    #[serde(alias = "grok", alias = "grok-build", alias = "grok_build")]
+    GrokBuild,
     OpenCode,
     OpenClaw,
     Hermes,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 7] = [
+    pub const ALL: [Agent; 8] = [
         Agent::Claude,
         Agent::ClaudeDesktop,
         Agent::Codex,
         Agent::Gemini,
+        Agent::GrokBuild,
         Agent::OpenCode,
         Agent::OpenClaw,
         Agent::Hermes,
@@ -37,6 +40,7 @@ impl Agent {
             Self::ClaudeDesktop => "claude-desktop",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
+            Self::GrokBuild => "grokbuild",
             Self::OpenCode => "opencode",
             Self::OpenClaw => "openclaw",
             Self::Hermes => "hermes",
@@ -50,14 +54,24 @@ impl Agent {
     pub fn supports_mcp(self) -> bool {
         matches!(
             self,
-            Self::Claude | Self::Codex | Self::Gemini | Self::OpenCode | Self::Hermes
+            Self::Claude
+                | Self::Codex
+                | Self::Gemini
+                | Self::GrokBuild
+                | Self::OpenCode
+                | Self::Hermes
         )
     }
 
     pub fn supports_skills(self) -> bool {
         matches!(
             self,
-            Self::Claude | Self::Codex | Self::Gemini | Self::OpenCode | Self::Hermes
+            Self::Claude
+                | Self::Codex
+                | Self::Gemini
+                | Self::GrokBuild
+                | Self::OpenCode
+                | Self::Hermes
         )
     }
 }
@@ -69,6 +83,7 @@ impl fmt::Display for Agent {
             Self::ClaudeDesktop => "Claude Desktop",
             Self::Codex => "Codex",
             Self::Gemini => "Gemini",
+            Self::GrokBuild => "Grok Build",
             Self::OpenCode => "OpenCode",
             Self::OpenClaw => "OpenClaw",
             Self::Hermes => "Hermes",
@@ -124,6 +139,7 @@ pub struct AgentFlags {
     pub claude: bool,
     pub codex: bool,
     pub gemini: bool,
+    pub grokbuild: bool,
     pub opencode: bool,
     pub hermes: bool,
 }
@@ -134,6 +150,7 @@ impl AgentFlags {
             Agent::Claude => self.claude,
             Agent::Codex => self.codex,
             Agent::Gemini => self.gemini,
+            Agent::GrokBuild => self.grokbuild,
             Agent::OpenCode => self.opencode,
             Agent::Hermes => self.hermes,
             Agent::ClaudeDesktop | Agent::OpenClaw => false,

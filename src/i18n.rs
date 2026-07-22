@@ -90,10 +90,15 @@ pub enum MessageKey {
     BackupNotCreated,
     ErrorCancelled,
     ErrorSyncLocked,
+    TuiSwitch,
+    TuiSync,
     TuiProviders,
     TuiSkills,
     TuiActivity,
     TuiSources,
+    TuiAgent,
+    TuiProvider,
+    TuiSource,
     TuiAgents,
     TuiDetails,
     TuiResize,
@@ -121,11 +126,17 @@ pub enum MessageKey {
     TuiUnmanaged,
     TuiBytes,
     TuiDefault,
+    TuiSyncNow,
     TuiFooterProviders,
+    TuiFooterProvidersCompact,
     TuiFooterSkills,
+    TuiFooterSkillsCompact,
     TuiFooterActivity,
+    TuiFooterActivityCompact,
     TuiFooterSources,
+    TuiFooterSourcesCompact,
     TuiWorking,
+    TuiWorkingShort,
     WizardResize,
     WizardNoSources,
     WizardFooterList,
@@ -305,10 +316,15 @@ impl Translator {
             (Language::ZhCn, MessageKey::BackupNotCreated) => "备份已关闭；未创建",
             (Language::ZhCn, MessageKey::ErrorCancelled) => "同步已取消",
             (Language::ZhCn, MessageKey::ErrorSyncLocked) => "另一个同步或恢复操作正在运行",
+            (Language::ZhCn, MessageKey::TuiSwitch) => "切换",
+            (Language::ZhCn, MessageKey::TuiSync) => "同步",
             (Language::ZhCn, MessageKey::TuiProviders) => "供应商",
             (Language::ZhCn, MessageKey::TuiSkills) => "技能",
             (Language::ZhCn, MessageKey::TuiActivity) => "活动",
             (Language::ZhCn, MessageKey::TuiSources) => "同步源",
+            (Language::ZhCn, MessageKey::TuiAgent) => "智能体",
+            (Language::ZhCn, MessageKey::TuiProvider) => "供应商",
+            (Language::ZhCn, MessageKey::TuiSource) => "同步源",
             (Language::ZhCn, MessageKey::TuiAgents) => "智能体",
             (Language::ZhCn, MessageKey::TuiDetails) => "详情",
             (Language::ZhCn, MessageKey::TuiResize) => "终端过小，请调整到至少 60×18。",
@@ -338,17 +354,29 @@ impl Translator {
             (Language::ZhCn, MessageKey::TuiUnmanaged) => "未受管",
             (Language::ZhCn, MessageKey::TuiBytes) => "字节",
             (Language::ZhCn, MessageKey::TuiDefault) => "默认",
+            (Language::ZhCn, MessageKey::TuiSyncNow) => "立即同步",
             (Language::ZhCn, MessageKey::TuiFooterProviders) => {
-                "↑↓ 移动  Tab 切换焦点  [ ] 智能体  Enter 应用  s 同步  w 向导  L 语言  q 退出"
+                "[] 智能体  ↑↓ 移动  Tab 焦点  Enter 切换  s 同步  w 向导  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::TuiFooterProvidersCompact) => {
+                "[] 智能体  ↑↓ 移动  Enter 切换  s 同步  q 退出"
             }
             (Language::ZhCn, MessageKey::TuiFooterSkills) => {
-                "↑↓ 移动  Tab 切换焦点  [ ] 智能体  s 同步  w 向导  L 语言  q 退出"
+                "[] 智能体  Tab 焦点  s 同步  w 向导  L 语言  q 退出"
+            }
+            (Language::ZhCn, MessageKey::TuiFooterSkillsCompact) => {
+                "[] 智能体  s 同步  q 退出"
             }
             (Language::ZhCn, MessageKey::TuiFooterActivity) => "s 同步  w 向导  L 语言  q 退出",
+            (Language::ZhCn, MessageKey::TuiFooterActivityCompact) => "s 同步  q 退出",
             (Language::ZhCn, MessageKey::TuiFooterSources) => {
                 "↑↓ 移动  Tab 切换焦点  s 同步  t 测试  m 默认  w 向导  L 语言  q 退出"
             }
+            (Language::ZhCn, MessageKey::TuiFooterSourcesCompact) => {
+                "↑↓ 移动  s 同步  t 测试  m 默认  q 退出"
+            }
             (Language::ZhCn, MessageKey::TuiWorking) => "正在工作 · 恢复前可按 Esc 取消",
+            (Language::ZhCn, MessageKey::TuiWorkingShort) => "运行中",
             (Language::ZhCn, MessageKey::WizardResize) => "终端过小，请调整到至少 50×15。",
             (Language::ZhCn, MessageKey::WizardNoSources) => {
                 "还没有同步源 · 按 a 添加 WebDAV 或 S3"
@@ -604,10 +632,15 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::ErrorSyncLocked) => {
                 "Another sync or restore operation is already running"
             }
+            (Language::Auto | Language::EnUs, MessageKey::TuiSwitch) => "Switch",
+            (Language::Auto | Language::EnUs, MessageKey::TuiSync) => "Sync",
             (Language::Auto | Language::EnUs, MessageKey::TuiProviders) => "Providers",
             (Language::Auto | Language::EnUs, MessageKey::TuiSkills) => "Skills",
             (Language::Auto | Language::EnUs, MessageKey::TuiActivity) => "Activity",
             (Language::Auto | Language::EnUs, MessageKey::TuiSources) => "Sources",
+            (Language::Auto | Language::EnUs, MessageKey::TuiAgent) => "Agent",
+            (Language::Auto | Language::EnUs, MessageKey::TuiProvider) => "Provider",
+            (Language::Auto | Language::EnUs, MessageKey::TuiSource) => "Source",
             (Language::Auto | Language::EnUs, MessageKey::TuiAgents) => "Agents",
             (Language::Auto | Language::EnUs, MessageKey::TuiDetails) => "Details",
             (Language::Auto | Language::EnUs, MessageKey::TuiResize) => {
@@ -645,21 +678,35 @@ impl Translator {
             (Language::Auto | Language::EnUs, MessageKey::TuiUnmanaged) => "unmanaged",
             (Language::Auto | Language::EnUs, MessageKey::TuiBytes) => "bytes",
             (Language::Auto | Language::EnUs, MessageKey::TuiDefault) => "DEFAULT",
+            (Language::Auto | Language::EnUs, MessageKey::TuiSyncNow) => "Sync now",
             (Language::Auto | Language::EnUs, MessageKey::TuiFooterProviders) => {
-                "↑↓ move  Tab focus  [ ] Agent  Enter apply  s sync  w wizard  L language  q quit"
+                "[] Agent  ↑↓ move  Tab focus  Enter switch  s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterProvidersCompact) => {
+                "[] Agent  ↑↓ move  Enter switch  s sync  q quit"
             }
             (Language::Auto | Language::EnUs, MessageKey::TuiFooterSkills) => {
-                "↑↓ move  Tab focus  [ ] Agent  s sync  w wizard  L language  q quit"
+                "[] Agent  Tab focus  s sync  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterSkillsCompact) => {
+                "[] Agent  s sync  q quit"
             }
             (Language::Auto | Language::EnUs, MessageKey::TuiFooterActivity) => {
                 "s sync  w wizard  L language  q quit"
             }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterActivityCompact) => {
+                "s sync  q quit"
+            }
             (Language::Auto | Language::EnUs, MessageKey::TuiFooterSources) => {
                 "↑↓ move  Tab focus  s sync  t test  m default  w wizard  L language  q quit"
+            }
+            (Language::Auto | Language::EnUs, MessageKey::TuiFooterSourcesCompact) => {
+                "↑↓ move  s sync  t test  m default  q quit"
             }
             (Language::Auto | Language::EnUs, MessageKey::TuiWorking) => {
                 "working · Esc cancels before restore"
             }
+            (Language::Auto | Language::EnUs, MessageKey::TuiWorkingShort) => "working",
             (Language::Auto | Language::EnUs, MessageKey::WizardResize) => {
                 "Resize terminal to at least 50×15"
             }
